@@ -24,7 +24,7 @@ const BED_STATUS: Record<string, string> = {
 
 
 const WardsPage: React.FC = () => {
-  const { wards, fetchWards } = useData();
+  const { wards, fetchWards, departments } = useData();
   const { searchQuery, setSearchQuery } = useSearch();
   const [search, setSearch] = useState(searchQuery);
   const [selectedWard, setSelectedWard] = useState<Ward | null>(null);
@@ -235,18 +235,26 @@ const WardsPage: React.FC = () => {
               </button>
             </div>
             <div className="space-y-4">
-              {[
-                { label: 'Ward Name', field: 'name', type: 'text', placeholder: 'e.g. Surgical Ward C' },
-                { label: 'Department', field: 'department', type: 'text', placeholder: 'e.g. Surgery' },
-              ].map(f => (
-                <div key={f.field}>
-                  <label className="block text-xs font-bold uppercase tracking-widest text-on-surface-variant mb-1.5 ml-1">{f.label}</label>
-                  <input type={f.type} placeholder={f.placeholder}
-                    value={(newWardForm as any)[f.field]}
-                    onChange={e => setNewWardForm(p => ({ ...p, [f.field]: e.target.value }))}
-                    className="w-full px-4 py-3 bg-surface-container-low border border-outline-variant/40 rounded-xl text-sm focus:ring-2 focus:ring-primary/20 focus:border-primary transition-all" />
-                </div>
-              ))}
+              <div>
+                <label className="block text-xs font-bold uppercase tracking-widest text-on-surface-variant mb-1.5 ml-1">Ward Name</label>
+                <input type="text" placeholder="e.g. Surgical Ward C"
+                  value={newWardForm.name}
+                  onChange={e => setNewWardForm(p => ({ ...p, name: e.target.value }))}
+                  className="w-full px-4 py-3 bg-surface-container-low border border-outline-variant/40 rounded-xl text-sm focus:ring-2 focus:ring-primary/20 focus:border-primary transition-all" />
+              </div>
+              <div>
+                <label className="block text-xs font-bold uppercase tracking-widest text-on-surface-variant mb-1.5 ml-1">Department</label>
+                <select 
+                  value={newWardForm.department} 
+                  onChange={e => setNewWardForm(p => ({ ...p, department: e.target.value }))}
+                  className="w-full px-4 py-3 bg-surface-container-low border border-outline-variant/40 rounded-xl text-sm focus:ring-2 focus:ring-primary/20 focus:border-primary transition-all appearance-none"
+                >
+                  <option value="">Select Department</option>
+                  {departments.map(dept => (
+                    <option key={dept.id} value={dept.name}>{dept.name}</option>
+                  ))}
+                </select>
+              </div>
               <div className="grid grid-cols-2 gap-4">
                 <div>
                   <label className="block text-xs font-bold uppercase tracking-widest text-on-surface-variant mb-1.5 ml-1">Type</label>

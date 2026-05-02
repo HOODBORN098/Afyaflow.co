@@ -3,16 +3,21 @@ package com.afyaflow.demo.service;
 import java.time.LocalDate;
 import java.util.Arrays;
 import java.util.List;
+import java.util.Optional;
 import java.util.stream.Collectors;
+
+import com.afyaflow.demo.dto.QueueStats;
 
 import org.springframework.stereotype.Service;
 
 import com.afyaflow.demo.model.Appointment;
 import com.afyaflow.demo.model.Doctor;
 import com.afyaflow.demo.model.Patient;
+import com.afyaflow.demo.model.User;
 import com.afyaflow.demo.repository.AppointmentRepository;
 import com.afyaflow.demo.repository.DoctorRepository;
 import com.afyaflow.demo.repository.PatientRepository;
+import com.afyaflow.demo.repository.UserRepository;
 
 @Service
 public class AppointmentService {
@@ -20,6 +25,8 @@ public class AppointmentService {
     private final AppointmentRepository repository;
     private final DoctorRepository doctorRepository;
     private final PatientRepository patientRepository;
+    private final NotificationService notificationService;
+    private final UserRepository userRepository;
 
     private static final List<String> ALL_SLOTS = Arrays.asList(
         "08:00", "08:30", "09:00", "09:30", "10:00", "10:30",
@@ -29,10 +36,14 @@ public class AppointmentService {
 
     public AppointmentService(AppointmentRepository repository,
                               DoctorRepository doctorRepository,
-                              PatientRepository patientRepository) {
+                              PatientRepository patientRepository,
+                              NotificationService notificationService,
+                              UserRepository userRepository) {
         this.repository = repository;
         this.doctorRepository = doctorRepository;
         this.patientRepository = patientRepository;
+        this.notificationService = notificationService;
+        this.userRepository = userRepository;
     }
 
     /** Legacy: used by the old afyaflow-react frontend */
@@ -43,6 +54,36 @@ public class AppointmentService {
 
     public List<Appointment> getAppointments() {
         return repository.findAll();
+    }
+
+    public Appointment getAppointment(Long id) {
+        return repository.findById(id).orElse(null);
+    }
+
+    public Appointment confirmAppointment(Long id) {
+        Appointment appt = repository.findById(id).orElseThrow();
+        appt.setStatus("CONFIRMED");
+        
+        // Ensure patient is in queue
+        Patient p = appt.getPatient();
+        if (p != null) {
+            p.setStatus("queued");
+            patientRepository.save(p);
+            
+            // Create notification for patient
+            if (p.getEmail() != null) {
+                userRepository.findByEmail(p.getEmail()).ifPresent(user -> {
+                    notificationService.createNotification(
+                        user, 
+                        "Appointment Confirmed", 
+                        "Your appointment for " + appt.getDepartmentName() + " has been confirmed. Your token is " + p.getPatientCode(),
+                        "SUCCESS"
+                    );
+                });
+            }
+        }
+        
+        return repository.save(appt);
     }
 
     public List<Appointment> getAppointmentsByPatient(Long patientId) {
@@ -124,10 +165,17 @@ public class AppointmentService {
                     .name(patientEmail.split("@")[0])
                     .firstName(patientEmail.split("@")[0])
                     .lastName("Patient")
+                    .patientCode(generateTokenId())
                     .status("ACTIVE")
                     .build();
                 return patientRepository.save(p);
             });
+
+        // CRITICAL: Ensure legacy patients also get the new 10-digit token format
+        if (patient.getPatientCode() == null || !patient.getPatientCode().startsWith("AFYA-")) {
+            patient.setPatientCode(generateTokenId());
+            patient = patientRepository.save(patient);
+        }
 
         Doctor assignedDoctor = null;
 
@@ -169,14 +217,121 @@ public class AppointmentService {
             .departmentName(assignedDoctor.getDepartment() != null ? assignedDoctor.getDepartment().getName() : "")
             .status("CONFIRMED")
             .type("scheduled")
+            .queueNumber(patient.getPatientCode())
             .build();
 
         try {
-            return repository.save(appt);
+            Appointment savedAppt = repository.save(appt);
+            
+            // If appointment is for today, put patient in queue immediately
+            if (savedAppt.getAppointmentDate().equals(LocalDate.now())) {
+                patient.setStatus("queued");
+                patient.setDepartment(savedAppt.getDepartmentName());
+                patientRepository.save(patient);
+            }
+            
+            // Create notification for patient
+            if (patient.getEmail() != null) {
+                userRepository.findByEmail(patient.getEmail()).ifPresent(user -> {
+                    notificationService.createNotification(
+                        user, 
+                        "New Appointment Booked", 
+                        "You have successfully booked an appointment for " + savedAppt.getDepartmentName() + " on " + savedAppt.getAppointmentDate(),
+                        "INFO"
+                    );
+                });
+            }
+            
+            return savedAppt;
         } catch (Exception e) {
             System.err.println("CRITICAL ERROR: Failed to save appointment!");
             e.printStackTrace();
             throw e;
         }
+    }
+    /**
+     * Confirms an appointment.
+     * Marks status as CONFIRMED and assigns the doctor.
+     */
+    public boolean confirmAppointment(Long appointmentId, Long doctorId) {
+        Optional<Appointment> optAppt = repository.findById(appointmentId);
+        if (optAppt.isPresent()) {
+            Appointment appt = optAppt.get();
+            Doctor doctor = doctorRepository.findById(doctorId)
+                .orElseThrow(() -> new RuntimeException("Doctor not found"));
+            
+            appt.setStatus("CONFIRMED");
+            appt.setDoctor(doctor);
+            
+            // Ensure patient is in queue for the doctor to see
+            Patient p = appt.getPatient();
+            if (p != null) {
+                p.setStatus("queued");
+                patientRepository.save(p);
+            }
+            
+            repository.save(appt);
+            return true;
+        }
+        return false;
+    }
+
+    /**
+     * Calculates queue statistics for a specific appointment.
+     * Position is determined by the number of CONFIRMED appointments 
+     * scheduled before this one on the same day for the same doctor.
+     */
+    public QueueStats getQueueStatus(Long appointmentId, Long doctorId) {
+        Appointment target = repository.findById(appointmentId)
+            .orElseThrow(() -> new RuntimeException("Appointment not found"));
+        
+        List<Appointment> dayAppointments = repository.findByDoctorId(doctorId)
+            .stream()
+            .filter(a -> a.getAppointmentDate().equals(target.getAppointmentDate()))
+            .filter(a -> "CONFIRMED".equals(a.getStatus()) || "IN_PROGRESS".equals(a.getStatus()))
+            .sorted((a, b) -> a.getTimeSlot().compareTo(b.getTimeSlot()))
+            .collect(Collectors.toList());
+
+        int position = dayAppointments.indexOf(target) + 1;
+        int total = dayAppointments.size();
+        
+        return QueueStats.builder()
+            .userPosition(position)
+            .totalInQueue(total)
+            .patientsAhead(Math.max(0, position - 1))
+            .estimatedWaitTime(Math.max(0, position - 1) * 15) // 15 mins per patient
+            .doctorStatus("Available")
+            .build();
+    }
+
+    private String generateTokenId() {
+        // Use a 10-digit random number as requested: AFYA-1407832147
+        long randomNum = (long)(Math.random() * 9_000_000_000L) + 1_000_000_000L;
+        return "AFYA-" + randomNum;
+    }
+    public void cancelAppointment(Long id) {
+        repository.findById(id).ifPresent(appt -> {
+            appt.setStatus("cancelled");
+            repository.save(appt);
+            
+            // If patient exists, update their status too if they were queued
+            Patient p = appt.getPatient();
+            if (p != null && "queued".equals(p.getStatus())) {
+                p.setStatus("admitted"); // Back to admitted or just idle
+                patientRepository.save(p);
+            }
+
+            // Notify user
+            if (p != null && p.getEmail() != null) {
+                userRepository.findByEmail(p.getEmail()).ifPresent(user -> {
+                    notificationService.createNotification(
+                        user,
+                        "Appointment Cancelled",
+                        "Your appointment for " + appt.getDepartmentName() + " has been successfully cancelled.",
+                        "ALERT"
+                    );
+                });
+            }
+        });
     }
 }

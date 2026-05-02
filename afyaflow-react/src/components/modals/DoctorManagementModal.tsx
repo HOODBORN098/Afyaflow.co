@@ -24,7 +24,7 @@ const DoctorManagementModal: React.FC<DoctorManagementModalProps> = ({ onClose }
         doc.specialization.toLowerCase().includes(searchQuery.toLowerCase()) ||
         doc.email.toLowerCase().includes(searchQuery.toLowerCase());
       
-      const matchesDept = !selectedDepartmentFilter || doc.departmentId === selectedDepartmentFilter;
+      const matchesDept = !selectedDepartmentFilter || doc.departmentId === selectedDepartmentFilter || doc.department?.id === selectedDepartmentFilter;
       
       return matchesSearch && matchesDept;
     });
@@ -34,7 +34,7 @@ const DoctorManagementModal: React.FC<DoctorManagementModalProps> = ({ onClose }
     const grouped: Record<number, Doctor[]> = {};
     
     departments.forEach(dept => {
-      grouped[dept.id] = doctors.filter(doc => doc.departmentId === dept.id);
+      grouped[dept.id] = doctors.filter(doc => doc.departmentId === dept.id || doc.department?.id === dept.id);
     });
     
     return grouped;
@@ -195,7 +195,7 @@ const DoctorManagementModal: React.FC<DoctorManagementModalProps> = ({ onClose }
                       <tr key={doc.id} className="hover:bg-surface-container-low transition-colors">
                         <td className="py-3 px-4 font-bold text-on-surface">{doc.name}</td>
                         <td className="py-3 px-4 text-on-surface-variant">
-                          {departments.find(d => d.id === doc.departmentId)?.name || 'Unassigned'}
+                          {doc.department?.name || departments.find(d => d.id === doc.departmentId)?.name || 'Unassigned'}
                         </td>
                         <td className="py-3 px-4 text-on-surface-variant">{doc.specialization}</td>
                         <td className="py-3 px-4 text-on-surface-variant text-xs">{doc.email}</td>
@@ -236,8 +236,8 @@ const DoctorManagementModal: React.FC<DoctorManagementModalProps> = ({ onClose }
       {/* Edit Doctor Modal */}
       {editingDoctor && (
         <div className="fixed inset-0 bg-black/50 backdrop-blur-sm z-[60] flex items-center justify-center p-4">
-          <DashboardCard className="w-full max-w-xl">
-            <div className="border-b border-outline-variant/30 p-6 flex justify-between items-center">
+          <DashboardCard className="w-full max-w-xl max-h-[80vh] flex flex-col overflow-hidden">
+            <div className="border-b border-outline-variant/30 p-6 flex justify-between items-center bg-white sticky top-0 z-10 shrink-0">
               <h3 className="text-xl font-bold text-primary">Edit Doctor: {editingDoctor.name}</h3>
               <button 
                 onClick={() => setEditingDoctor(null)}
@@ -247,7 +247,7 @@ const DoctorManagementModal: React.FC<DoctorManagementModalProps> = ({ onClose }
               </button>
             </div>
 
-            <div className="p-6 space-y-4">
+            <div className="p-6 space-y-4 overflow-y-auto flex-1 custom-scrollbar">
               {/* Name (Read-only) */}
               <div>
                 <label className="text-xs font-bold text-on-surface-variant uppercase mb-2 block">
@@ -267,7 +267,7 @@ const DoctorManagementModal: React.FC<DoctorManagementModalProps> = ({ onClose }
                   Department
                 </label>
                 <select
-                  value={editingDoctor.departmentId || ''}
+                  value={editingDoctor.departmentId || editingDoctor.department?.id || ''}
                   onChange={(e) => setEditingDoctor({ 
                     ...editingDoctor, 
                     departmentId: e.target.value ? Number(e.target.value) : undefined 
@@ -341,21 +341,23 @@ const DoctorManagementModal: React.FC<DoctorManagementModalProps> = ({ onClose }
                 </select>
               </div>
 
-              {/* Buttons */}
-              <div className="flex gap-3 mt-6 pt-4 border-t border-outline-variant/30">
-                <button
-                  onClick={() => setEditingDoctor(null)}
-                  className="flex-1 px-4 py-2 border border-outline-variant/30 rounded-lg font-bold text-on-surface-variant hover:bg-surface-container-low transition-colors"
-                >
-                  Cancel
-                </button>
-                <button
-                  onClick={() => handleSaveDoctor(editingDoctor)}
-                  className="flex-1 px-4 py-2 bg-primary text-on-primary rounded-lg font-bold hover:bg-primary/90 transition-colors"
-                >
-                  Save Changes
-                </button>
-              </div>
+                </div>
+
+
+            {/* Fixed Action Buttons */}
+            <div className="p-6 border-t border-outline-variant/30 flex gap-3 bg-white sticky bottom-0 shrink-0">
+              <button
+                onClick={() => setEditingDoctor(null)}
+                className="flex-1 px-4 py-3 border border-outline-variant/30 rounded-lg font-bold text-on-surface-variant hover:bg-surface-container-low transition-colors"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={() => handleSaveDoctor(editingDoctor)}
+                className="flex-1 px-4 py-3 bg-primary text-on-primary rounded-lg font-bold hover:bg-primary/90 transition-colors"
+              >
+                Save Changes
+              </button>
             </div>
           </DashboardCard>
         </div>

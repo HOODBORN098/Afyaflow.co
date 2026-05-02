@@ -1,6 +1,5 @@
 import { useState, useEffect, useMemo } from 'react';
 import { useNavigate } from 'react-router';
-import { Activity, ArrowLeft, Check, Clock, Users } from 'lucide-react';
 import { toast } from 'sonner';
 import {
   getDepartmentsApi,
@@ -11,8 +10,24 @@ import {
   Doctor,
   QueueApiResponse
 } from '../../lib/api';
+import { 
+  ArrowLeft, 
+  Activity, 
+  CheckCircle2, 
+  Calendar, 
+  Clock, 
+  User, 
+  Stethoscope, 
+  Check, 
+  LogIn, 
+  UserPlus, 
+  AlertCircle,
+  X,
+  Printer,
+  ChevronRight,
+  Users
+} from 'lucide-react';
 import { getAccessToken } from '../../lib/authStorage';
-import { LogIn, UserPlus, AlertCircle } from 'lucide-react';
 import { 
   saveBookingData, 
   getBookingData, 
@@ -43,13 +58,18 @@ export function BookAppointment() {
   const [selectedDoctor, setSelectedDoctor] = useState<number | null>(null);
   const [selectedDate, setSelectedDate] = useState<string>('');
   const [selectedTime, setSelectedTime] = useState<string>('');
-  const [showAuthModal, setShowAuthModal] = useState(false);
   const [isBookingComplete, setIsBookingComplete] = useState(false);
+  const [bookedAppointment, setBookedAppointment] = useState<any>(null);
+  const [showAuthModal, setShowAuthModal] = useState(false);
   const [showResumeOption, setShowResumeOption] = useState(false);
   const [departmentNames, setDepartmentNames] = useState<Record<number, string>>({});
   const [doctorNames, setDoctorNames] = useState<Record<number, string>>({});
 
-  const minDate = useMemo(() => new Date().toISOString().split('T')[0], []);
+  const minDate = useMemo(() => {
+    const tomorrow = new Date();
+    tomorrow.setDate(tomorrow.getDate() + 1);
+    return tomorrow.toISOString().split('T')[0];
+  }, []);
 
   // ========== CHECK FOR EXISTING BOOKING DRAFT ON LOAD ==========
   useEffect(() => {
@@ -99,13 +119,11 @@ export function BookAppointment() {
         .then(doctorList => {
           const doctorsWithQueue = doctorList.map(doctor => {
             const queueCount = queueData.filter(q => q.patient?.firstName)?.length || 0;
-            const currentHour = new Date().getHours();
+            // Real-time status logic: Doctors are available by default unless the API says otherwise.
             let availability: 'available' | 'in-surgery' | 'absent' = 'available';
-            if (currentHour >= 12 && currentHour < 14) {
-              availability = 'in-surgery';
-            } else if (currentHour >= 17) {
-              availability = 'absent';
-            }
+            
+            // In a production system, we would fetch the doctor's actual shift or current status.
+            // For this version, we'll keep them available during standard hospital hours.
             
             return {
               ...doctor,
@@ -201,8 +219,9 @@ export function BookAppointment() {
       clearBookingData();
       
       toast.success('Appointment booked successfully!');
+      setBookedAppointment(result);
       setIsBookingComplete(true);
-      setTimeout(() => navigate('/patient'), 2000);
+      // Removed auto-navigate so user can see the token
     } catch (error) {
       console.error('Booking error:', error);
       const errorMessage = error instanceof Error ? error.message : 'Failed to book appointment. Please check your connection.';
@@ -362,6 +381,7 @@ export function BookAppointment() {
                           <span className="font-semibold text-foreground">{doctor.queueCount} patients</span>
                         </div>
                         
+                        
                         <div className="flex items-center gap-2 text-sm">
                           <Clock className="w-4 h-4" />
                           <span className={`font-semibold px-2 py-1 rounded-full text-xs uppercase ${
@@ -488,56 +508,54 @@ export function BookAppointment() {
           </div>
         )}
 
-        {/* Booking Success */}
+        {/* Success Screen */}
         {isBookingComplete && (
-          <div className="max-w-2xl mx-auto">
-            <div className="bg-gradient-to-br from-green-50 to-emerald-50 rounded-3xl border-2 border-green-200 p-12 text-center space-y-8 shadow-2xl animate-in zoom-in-95 duration-500">
-              <div className="w-24 h-24 bg-green-100 rounded-full flex items-center justify-center mx-auto">
+          <div className="max-w-2xl mx-auto py-12 animate-in zoom-in-95 duration-500">
+            <div className="bg-white rounded-3xl p-12 text-center shadow-2xl border border-border relative overflow-hidden">
+              <div className="absolute top-0 left-0 w-full h-2 bg-green-500" />
+              <div className="w-24 h-24 bg-green-100 rounded-full flex items-center justify-center mx-auto mb-8">
                 <Check className="w-12 h-12 text-green-600" />
               </div>
+              <h2 className="text-3xl font-black text-foreground mb-4">Appointment Confirmed!</h2>
+              <p className="text-muted-foreground mb-12">Your booking has been successfully registered in our system.</p>
               
-              <div className="space-y-4">
-                <h2 className="text-4xl font-black text-green-900">Booking Successful!</h2>
-                <p className="text-lg text-green-700 leading-relaxed">
-                  Your appointment has been confirmed. You will receive a confirmation email shortly with your appointment details and token number.
+              <div className="bg-slate-50 rounded-2xl p-8 mb-12 border border-slate-100 shadow-inner">
+                <p className="text-[10px] font-black uppercase tracking-[0.2em] text-slate-400 mb-4">Your Queue Token</p>
+                <p className="text-7xl font-black text-primary tracking-tighter">
+                  {bookedAppointment?.queueNumber || 'AFYA-PENDING'}
                 </p>
-              </div>
-
-              <div className="bg-white rounded-2xl p-8 space-y-4 border border-green-100">
-                <div className="text-left space-y-4">
-                  <div>
-                    <p className="text-sm font-bold text-muted-foreground uppercase">Department</p>
-                    <p className="text-lg font-bold text-foreground">{departments.find(d => d.id === selectedDepartment)?.name}</p>
+                <div className="flex items-center justify-center gap-4 mt-8 pt-6 border-t border-slate-200">
+                  <div className="flex items-center gap-2 text-slate-600 font-bold text-sm">
+                    <Calendar className="w-4 h-4 text-primary" />
+                    <span>{selectedDate}</span>
                   </div>
-                  <div>
-                    <p className="text-sm font-bold text-muted-foreground uppercase">Doctor</p>
-                    <p className="text-lg font-bold text-foreground">{doctors.find(d => d.id === selectedDoctor)?.name}</p>
-                  </div>
-                  <div>
-                    <p className="text-sm font-bold text-muted-foreground uppercase">Date & Time</p>
-                    <p className="text-lg font-bold text-foreground">
-                      {new Date(selectedDate).toLocaleDateString('en-US', { weekday: 'long', month: 'short', day: 'numeric' })} at {selectedTime}
-                    </p>
+                  <div className="w-1.5 h-1.5 rounded-full bg-slate-300" />
+                  <div className="flex items-center gap-2 text-slate-600 font-bold text-sm">
+                    <Clock className="w-4 h-4 text-primary" />
+                    <span>{selectedTime}</span>
                   </div>
                 </div>
               </div>
 
-              <div className="space-y-3 text-sm text-green-700">
-                <p>✓ Please arrive 10 minutes before your appointment</p>
-                <p>✓ Bring your ID and insurance card</p>
-                <p>✓ Your token number will be assigned at the hospital</p>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <button 
+                  onClick={() => navigate('/patient')}
+                  className="w-full py-4 bg-primary text-white rounded-xl font-black hover:opacity-90 transition-all shadow-lg shadow-primary/20"
+                >
+                  Go to Dashboard
+                </button>
+                <button 
+                  onClick={() => window.print()}
+                  className="w-full py-4 bg-slate-100 text-slate-900 rounded-xl font-bold hover:bg-slate-200 transition-all flex items-center justify-center gap-2"
+                >
+                  <Printer className="w-5 h-5" />
+                  Print Token
+                </button>
               </div>
-
-              <button
-                onClick={() => navigate('/patient')}
-                className="w-full py-4 bg-green-600 text-white rounded-2xl font-bold hover:bg-green-700 transition-all shadow-lg shadow-green-600/20"
-              >
-                Return to Dashboard
-              </button>
+              <p className="mt-8 text-xs text-muted-foreground">Please present this token at the reception upon arrival.</p>
             </div>
           </div>
         )}
-
       </main>
 
       {/* Auth Requirement Modal */}

@@ -104,6 +104,7 @@ export interface Prescription {
 export interface Referral {
     id: string;
     toSpecialty: string;
+    toDoctor?: string;
     reason: string;
     urgency: 'routine' | 'urgent' | 'emergency';
     referredAt: string;
@@ -326,7 +327,10 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
                 const response = await patientApi.getAll();
                 const backendPatients = response.data.map((p: any) => ({
                     ...p,
-                    id: String(p.id)
+                    id: String(p.id),
+                    vitals: p.vitalsJson ? JSON.parse(p.vitalsJson) : [],
+                    prescriptions: p.prescriptionsJson ? JSON.parse(p.prescriptionsJson) : [],
+                    referrals: p.referralsJson ? JSON.parse(p.referralsJson) : []
                 }));
                 
                 if (backendPatients.length > 0) {
@@ -334,7 +338,6 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
                 }
             } catch (error) {
                 console.error("Failed to fetch initial data:", error);
-                // Don't notify on 401/403 if we're not authenticated (though guard should prevent this)
                 if (isAuthenticated) {
                     notify('Could not connect to health server. Please check your connection.', 'error', 'Connection Error');
                 }
@@ -343,7 +346,26 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
         };
 
         fetchInitialData();
-    }, [isAuthenticated, notify, fetchDepartments, fetchWards, fetchAuditLogs]);
+
+        // Set up polling for patients and appointments (every 10 seconds)
+        const pollInterval = setInterval(async () => {
+            try {
+                const response = await patientApi.getAll();
+                const backendPatients = response.data.map((p: any) => ({
+                    ...p,
+                    id: String(p.id),
+                    vitals: p.vitalsJson ? JSON.parse(p.vitalsJson) : [],
+                    prescriptions: p.prescriptionsJson ? JSON.parse(p.prescriptionsJson) : [],
+                    referrals: p.referralsJson ? JSON.parse(p.referralsJson) : []
+                }));
+                setPatients(backendPatients);
+            } catch (error) {
+                console.error("Polling error:", error);
+            }
+        }, 10000);
+
+        return () => clearInterval(pollInterval);
+    }, [isAuthenticated, notify, fetchDepartments, fetchWards, fetchAuditLogs, fetchDoctors]);
 
 
     const addPatient = useCallback(async (data: Omit<Patient, 'id' | 'tokenId' | 'registeredAt'>): Promise<Patient> => {
@@ -351,7 +373,10 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
             const response = await patientApi.create(data);
             const newPatient: Patient = {
                 ...response.data,
-                id: String(response.data.id)
+                id: String(response.data.id),
+                vitals: response.data.vitalsJson ? JSON.parse(response.data.vitalsJson) : [],
+                prescriptions: response.data.prescriptionsJson ? JSON.parse(response.data.prescriptionsJson) : [],
+                referrals: response.data.referralsJson ? JSON.parse(response.data.referralsJson) : []
             };
             setPatients(prev => [...prev, newPatient]);
             notify(`Patient ${newPatient.name} registered successfully. Token: ${newPatient.tokenId}`, 'success', 'Patient Registered');
@@ -399,46 +424,98 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
         setAppointments(prev => prev.map(a => a.id === id ? { ...a, status } : a));
     }, []);
 
-    const addPrescription = useCallback((patientId: string, rx: Omit<Prescription, 'id' | 'prescribedAt'>) => {
+    const addPrescription = useCallback(async (patientId: string, rx: Omit<Prescription, 'id' | 'prescribedAt'>) => {
         const newRx: Prescription = {
             ...rx,
             id: Math.random().toString(36).substr(2, 9),
             prescribedAt: new Date().toISOString(),
         };
-        setPatients(prev => prev.map(p => 
-            p.id === patientId 
-                ? { ...p, prescriptions: [...(p.prescriptions || []), newRx] } 
-                : p
-        ));
-        notify(`Prescribed ${newRx.medicineName} to patient.`, 'success', 'Prescription Added');
-    }, [notify]);
+        
+        const patient = patients.find(p => p.id === patientId);
+        if (!patient) return;
 
-    const addReferral = useCallback((patientId: string, ref: Omit<Referral, 'id' | 'referredAt'>) => {
+        const updatedPrescriptions = [...(patient.prescriptions || []), newRx];
+        
+        try {
+            await api.put(`/api/patients/${patientId}`, {
+                prescriptionsJson: JSON.stringify(updatedPrescriptions)
+            });
+            
+            setPatients(prev => prev.map(p => 
+                p.id === patientId 
+                    ? { ...p, prescriptions: updatedPrescriptions } 
+                    : p
+            ));
+            notify(`Prescribed ${newRx.medicineName} to patient.`, 'success', 'Prescription Added');
+        } catch (error) {
+            notify('Failed to save prescription to server.', 'error', 'Server Error');
+        }
+    }, [notify, patients]);
+
+    const addReferral = useCallback(async (patientId: string, ref: Omit<Referral, 'id' | 'referredAt'>) => {
         const newRef: Referral = {
             ...ref,
             id: Math.random().toString(36).substr(2, 9),
             referredAt: new Date().toISOString(),
         };
-        setPatients(prev => prev.map(p => 
-            p.id === patientId 
-                ? { ...p, referrals: [...(p.referrals || []), newRef] } 
-                : p
-        ));
-        notify(`Referral to ${newRef.toSpecialty} generated.`, 'info', 'Specialist Referral');
-    }, [notify]);
 
-    const updateVitals = useCallback((patientId: string, v: Omit<Vitals, 'recordedAt'>) => {
+        const patient = patients.find(p => p.id === patientId);
+        if (!patient) return;
+
+        const updatedReferrals = [...(patient.referrals || []), newRef];
+
+        try {
+            // Update patient in the backend: Move to new department and set as queued
+            await api.put(`/api/patients/${patientId}`, {
+                referralsJson: JSON.stringify(updatedReferrals),
+                department: newRef.toSpecialty,
+                assignedDoctor: newRef.toDoctor || "",
+                status: 'queued'
+            });
+
+            setPatients(prev => prev.map(p => 
+                p.id === patientId 
+                    ? { 
+                        ...p, 
+                        referrals: updatedReferrals,
+                        department: newRef.toSpecialty,
+                        assignedDoctor: newRef.toDoctor || p.assignedDoctor,
+                        status: 'queued'
+                      } 
+                    : p
+            ));
+            notify(`Patient referred to ${newRef.toSpecialty}${newRef.toDoctor ? ` (Dr. ${newRef.toDoctor})` : ''}.`, 'info', 'Patient Transferred');
+        } catch (error) {
+            notify('Failed to save referral to server.', 'error', 'Server Error');
+        }
+    }, [notify, patients]);
+
+    const updateVitals = useCallback(async (patientId: string, v: Omit<Vitals, 'recordedAt'>) => {
         const newVitals: Vitals = {
             ...v,
             recordedAt: new Date().toISOString(),
         };
-        setPatients(prev => prev.map(p => 
-            p.id === patientId 
-                ? { ...p, vitals: [...(p.vitals || []), newVitals] } 
-                : p
-        ));
-        notify('Vitals updated successfully.', 'success', 'Vitals Recorded');
-    }, [notify]);
+
+        const patient = patients.find(p => p.id === patientId);
+        if (!patient) return;
+
+        const updatedVitalsList = [...(patient.vitals || []), newVitals];
+
+        try {
+            await api.put(`/api/patients/${patientId}`, {
+                vitalsJson: JSON.stringify(updatedVitalsList)
+            });
+
+            setPatients(prev => prev.map(p => 
+                p.id === patientId 
+                    ? { ...p, vitals: updatedVitalsList } 
+                    : p
+            ));
+            notify('Vitals updated successfully.', 'success', 'Vitals Recorded');
+        } catch (error) {
+            notify('Failed to save vitals to server.', 'error', 'Server Error');
+        }
+    }, [notify, patients]);
 
     const getDepartmentStats = useCallback(() => {
         const stats: Record<string, number> = {};

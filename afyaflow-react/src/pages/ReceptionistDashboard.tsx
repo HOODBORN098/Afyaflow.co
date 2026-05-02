@@ -13,6 +13,16 @@ const PRIORITY_VARIANT: Record<string, 'success' | 'error' | 'neutral' | 'info'>
   emergency: 'error',
 };
 
+/**
+ * RECEPTIONIST DASHBOARD
+ * Front-desk management system for walk-ins and patient routing.
+ * 
+ * MAIN WORKFLOWS:
+ *   1. New Admission: Registering patients and assigning departments.
+ *   2. Token Generation: Unique AFY-XXXX codes for queue tracking.
+ *   3. Live Queue Monitoring: Visualizing waiting times and urgency.
+ *   4. Ticket Printing: Physical/PDF handovers for patients.
+ */
 const ReceptionistDashboard: React.FC = () => {
   const { patients, departments } = useData();
   const { searchQuery } = useSearch();
@@ -51,8 +61,14 @@ const ReceptionistDashboard: React.FC = () => {
     setShowAdmissionModal(false);
   };
 
+  /**
+   * HANDLE TOKEN PRINTING
+   * Generates a physical-style layout for the queue ticket.
+   * Opens a new window for the browser's native print dialog.
+   * @param tokenId The token ID to print (defaults to active token)
+   */
   const handlePrint = (tokenId?: string) => {
-    const token = tokenId || activeToken?.tokenId;
+    const token = tokenId || lastToken?.tokenId || activeToken?.tokenId;
     if (!token) return;
     const patient = patients.find(p => p.tokenId === token) || activeToken;
     const w = window.open('', '_blank', 'width=400,height=300');
@@ -84,6 +100,23 @@ const ReceptionistDashboard: React.FC = () => {
   </html>
 `);
     w.document.close();
+  };
+
+  const handleExportQueueCSV = () => {
+    if (queuePatients.length === 0) return;
+    const headers = ['Token ID', 'Patient Name', 'Department', 'Priority', 'Status', 'Registered At'].join(',');
+    const rows = queuePatients.map(p => {
+      const ts = new Date(p.registeredAt).toISOString();
+      return [p.tokenId, `"${p.name}"`, p.department, p.priority, p.status, ts].join(',');
+    });
+    const csv = [headers, ...rows].join('\n');
+    const blob = new Blob([csv], { type: 'text/csv' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `afyaflow_queue_${new Date().toISOString().split('T')[0]}.csv`;
+    a.click();
+    URL.revokeObjectURL(url);
   };
 
   return (
@@ -139,19 +172,25 @@ const ReceptionistDashboard: React.FC = () => {
 
           {/* Success: newly generated token */}
           {lastToken && (
-            <div className="mt-6 p-4 bg-secondary/5 border border-secondary/20 rounded-2xl flex items-center justify-between">
-              <div>
-                <p className="text-xs font-extrabold uppercase tracking-widest text-secondary mb-1">Token Generated</p>
-                <p className="text-2xl font-black text-primary">{lastToken.tokenId}</p>
-                <p className="text-xs text-on-surface-variant mt-0.5">{lastToken.name}</p>
+            <div className="mt-6 p-6 bg-secondary/10 border-2 border-secondary/20 rounded-3xl flex items-center justify-between relative overflow-hidden animate-in slide-in-from-top-4 duration-500">
+              <div className="absolute top-0 right-0 p-2">
+                <button onClick={() => setLastToken(null)} className="text-secondary/60 hover:text-secondary">
+                  <span className="material-symbols-outlined text-sm">close</span>
+                </button>
+              </div>
+              <div className="relative z-10">
+                <p className="text-[10px] font-black uppercase tracking-widest text-secondary mb-1">Last Token Generated</p>
+                <p className="text-4xl font-black text-primary tracking-tighter">{lastToken.tokenId}</p>
+                <p className="text-xs text-on-surface-variant font-bold mt-1 uppercase opacity-60">{lastToken.name}</p>
               </div>
               <button
                 onClick={() => handlePrint(lastToken.tokenId)}
-                className="flex flex-col items-center gap-1 p-3 rounded-xl hover:bg-secondary/10 transition-colors text-secondary"
+                className="h-16 w-16 rounded-2xl bg-secondary text-white flex flex-col items-center justify-center gap-1 shadow-lg shadow-secondary/20 hover:scale-105 transition-all relative z-10"
               >
                 <span className="material-symbols-outlined">print</span>
                 <span className="text-[10px] font-bold">Print</span>
               </button>
+              <div className="absolute -left-4 -bottom-4 w-20 h-20 bg-secondary/5 rounded-full blur-2xl" />
             </div>
           )}
         </DashboardCard>
@@ -214,6 +253,10 @@ const ReceptionistDashboard: React.FC = () => {
           <div className="px-6 py-4 border-b border-outline-variant/10 flex justify-between items-center bg-surface-container-lowest">
             <h3 className="font-bold text-on-surface">Live Queue (Waiting)</h3>
             <div className="flex gap-2">
+              <button onClick={handleExportQueueCSV} className="bg-surface-container-high hover:bg-surface-container px-3 py-1 rounded-full text-xs font-bold transition-colors flex items-center gap-1 border border-outline-variant/30">
+                <span className="material-symbols-outlined text-sm">download</span>
+                Export CSV
+              </button>
               <StatusChip label={`${queueWaiting.length} Active`} variant="info" className="lowercase" />
               <StatusChip
                 label={`${queueWaiting.filter(p => p.priority === 'urgent').length} Urgent`}

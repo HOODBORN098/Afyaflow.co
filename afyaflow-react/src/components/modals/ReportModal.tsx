@@ -214,7 +214,7 @@ const ReportModal: React.FC<ReportModalProps> = ({ onClose }) => {
     return (
         <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm animate-in fade-in duration-300">
             <div className="w-full max-w-4xl max-h-[90vh] overflow-hidden flex flex-col animate-in zoom-in-95 duration-300">
-                <DashboardCard noPadding className="flex-1 flex flex-col shadow-2xl border-outline-variant/20 bg-white">
+                <DashboardCard noPadding className="flex-1 flex flex-col shadow-2xl border-outline-variant/20 bg-white overflow-hidden">
                     {/* Header */}
                     <div className="px-8 py-6 border-b border-outline-variant/10 flex justify-between items-center bg-surface-container-lowest">
                         <div className="flex items-center gap-4">
@@ -234,7 +234,7 @@ const ReportModal: React.FC<ReportModalProps> = ({ onClose }) => {
                         </button>
                     </div>
 
-                    <div className="flex-1 overflow-y-auto p-8 space-y-8">
+                    <div className="flex-1 overflow-y-auto min-h-0 p-8 space-y-8 custom-scrollbar">
                         {/* Config Section */}
                         <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
                             <div className="space-y-4">

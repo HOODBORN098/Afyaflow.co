@@ -40,17 +40,33 @@ import { useNavigate } from 'react-router';
 import { Activity, Calendar, Clock, Bell, LogOut, Plus, User, X, Check, Download, Repeat2, Trash2 } from 'lucide-react';
 import { AppointmentCard } from '../components/AppointmentCard';
 import { getCurrentRole, getCurrentUserId, clearAccessToken } from '../../lib/authStorage';
-import { apiRequest } from '../../lib/api';
+import { 
+  apiRequest, 
+  getQueueStatusApi, 
+  QueueStats as QueueStatsType,
+  getNotificationsApi,
+  getUnreadCountApi,
+  markAsReadApi,
+  markAllAsReadApi,
+  cancelAppointmentApi,
+  Notification
+} from '../../lib/api';
 import { toast } from 'sonner';
+import { useCallback } from 'react';
 
 type Patient = {
   id: number;
+  tokenId: string;
   firstName: string;
   lastName: string;
   address: string;
-  phoneNumber?: string;
+  phone?: string;
   dob?: string;
   gender?: 'MALE' | 'FEMALE' | 'OTHER';
+  vitalsJson?: string;
+  prescriptionsJson?: string;
+  referralsJson?: string;
+  consultationNotes?: string;
 };
 
 type Appointment = {
@@ -65,6 +81,11 @@ type Appointment = {
   queueNumber?: string;
 };
 
+/**
+ * PATIENT DASHBOARD COMPONENT
+ * The main interface for authenticated patients.
+ * Managed with React Hooks (useState, useEffect, useNavigate).
+ */
 export function PatientDashboard() {
   const navigate = useNavigate();
 
@@ -76,6 +97,9 @@ export function PatientDashboard() {
   const [isEditing, setIsEditing] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
   const [editData, setEditData] = useState<Patient | null>(null);
+  
+  // Real-time Queue Tracking
+  const [queueStats, setQueueStats] = useState<QueueStatsType | null>(null);
 
   // ========== RESCHEDULE/CANCEL MODAL STATE ==========
   // Track which appointment user wants to interact with
@@ -92,7 +116,97 @@ export function PatientDashboard() {
   const [generatedTicket, setGeneratedTicket] = useState<{ number: string; time: string } | null>(null);
   const [showTicketModal, setShowTicketModal] = useState(false);
 
-  // ========== DATA FETCHING ON COMPONENT MOUNT ==========
+  // ========== LOGOUT MODAL STATE ==========
+  const [showLogoutModal, setShowLogoutModal] = useState(false);
+
+  // ========== LIVE CLOCK STATE ==========
+  const [currentTime, setCurrentTime] = useState(new Date());
+
+  // ========== NOTIFICATION STATE ==========
+  const [notifications, setNotifications] = useState<Notification[]>([]);
+  const [unreadCount, setUnreadCount] = useState(0);
+  const [showNotifications, setShowNotifications] = useState(false);
+
+  useEffect(() => {
+    const fetchNotifications = async () => {
+      try {
+        const [notifs, count] = await Promise.all([
+          getNotificationsApi(),
+          getUnreadCountApi()
+        ]);
+        setNotifications(notifs);
+        setUnreadCount(count);
+      } catch (err) {
+        console.error('Failed to fetch notifications:', err);
+      }
+    };
+
+    fetchNotifications();
+    const interval = setInterval(fetchNotifications, 15000);
+    return () => clearInterval(interval);
+  }, []);
+
+  const handleMarkAsRead = async (id: number) => {
+    try {
+      await markAsReadApi(id);
+      setNotifications(prev => prev.map(n => n.id === id ? { ...n, isRead: true } : n));
+      setUnreadCount(prev => Math.max(0, prev - 1));
+    } catch (err) {
+      toast.error('Failed to mark notification as read');
+    }
+  };
+
+  const handleMarkAllRead = async () => {
+    try {
+      await markAllAsReadApi();
+      setNotifications(prev => prev.map(n => ({ ...n, isRead: true })));
+      setUnreadCount(0);
+      toast.success('All notifications marked as read');
+    } catch (err) {
+      toast.error('Failed to mark all as read');
+    }
+  };
+
+  // ========== DATA FETCHING LOGIC ==========
+
+  const fetchData = useCallback(async () => {
+    const userId = getCurrentUserId();
+    if (!userId) return;
+
+    try {
+      const patientData = await apiRequest<Patient>(`/patients/me`);
+      setPatient(patientData);
+
+      // Fetch appointments
+      const rawAppointments = await apiRequest<any[]>(`/appointments?patientId=${patientData.id}`);
+      const appointments: Appointment[] = rawAppointments.map(a => ({
+        id: a.id,
+        patientId: a.patient?.id || userId,
+        patientName: a.patient?.name,
+        department: a.departmentName || a.department?.name || '',
+        departmentId: a.department?.id,
+        doctor: a.doctor?.name || '',
+        doctorId: a.doctor?.id,
+        date: a.appointmentDate || a.date,
+        time: a.timeSlot || a.time,
+        status: a.status?.toLowerCase() || 'confirmed',
+        queueNumber: a.queueNumber || a.patient?.patientCode || '—',
+      }));
+
+      const now = new Date();
+      now.setHours(0, 0, 0, 0); // Date comparison only
+      
+      const upcoming = appointments.find(a => a.date && new Date(a.date) >= now && a.status !== 'cancelled') || null;
+      const history = appointments.filter(a => a.date && (new Date(a.date) < now || a.status === 'cancelled'));
+
+      setUpcomingAppointment(upcoming);
+      setAppointmentHistory(history);
+    } catch (err) {
+      console.error('Error fetching patient dashboard:', err);
+    } finally {
+      setLoading(false);
+    }
+  }, [navigate]);
 
   useEffect(() => {
     const role = getCurrentRole();
@@ -101,34 +215,40 @@ export function PatientDashboard() {
       return;
     }
 
-    const fetchData = async () => {
-      const userId = getCurrentUserId();
-      if (!userId) {
-        navigate('/login');
-        return;
-      }
+    fetchData();
+    const interval = setInterval(fetchData, 20000); // Polling every 20 seconds
+    return () => clearInterval(interval);
+  }, [fetchData, navigate]);
 
+
+  /**
+   * EFFECT: Real-time Queue Polling
+   * 
+   * If the patient has an upcoming appointment, this effect polls
+   * the backend every 10 seconds to get the latest position in line
+   * and estimated wait time.
+   */
+  useEffect(() => {
+    if (!upcomingAppointment || !upcomingAppointment.id) return;
+
+    const fetchQueueStatus = async () => {
       try {
-        const patientData = await apiRequest<Patient>(`/patients/me`);
-        setPatient(patientData);
-
-        const appointments = await apiRequest<Appointment[]>(`/appointments?patientId=${userId}`);
-
-        const now = new Date();
-        const upcoming = appointments.find(a => a.date && new Date(a.date) >= now) || null;
-        const history = appointments.filter(a => a.date && new Date(a.date) < now);
-
-        setUpcomingAppointment(upcoming);
-        setAppointmentHistory(history);
+        if (!upcomingAppointment.doctorId) return;
+        const stats = await getQueueStatusApi(upcomingAppointment.id, upcomingAppointment.doctorId);
+        setQueueStats(stats);
       } catch (err) {
-        console.error('Error fetching patient dashboard:', err);
-      } finally {
-        setLoading(false);
+        console.error('Failed to poll queue status:', err);
       }
     };
 
-    fetchData();
-  }, [navigate]);
+    // Initial fetch
+    fetchQueueStatus();
+
+    // Set up interval for continuous updates (10 seconds)
+    const interval = setInterval(fetchQueueStatus, 10000);
+
+    return () => clearInterval(interval);
+  }, [upcomingAppointment]);
 
   const handleEditClick = () => {
     setEditData(patient);
@@ -150,7 +270,7 @@ export function PatientDashboard() {
         body: JSON.stringify({
           firstName: editData.firstName,
           lastName: editData.lastName,
-          phoneNumber: editData.phoneNumber,
+          phone: editData.phone,
           address: editData.address,
           gender: editData.gender,
           dob: editData.dob,
@@ -245,10 +365,8 @@ export function PatientDashboard() {
 
     setIsRescheduling(true);
     try {
-      // Call API to delete/cancel appointment
-      await apiRequest(`/appointments/${selectedAppointmentForAction.id}`, {
-        method: 'DELETE',
-      });
+      // Call formal API to cancel appointment
+      await cancelAppointmentApi(selectedAppointmentForAction.id);
 
       // Remove from upcoming if it's the current one
       if (upcomingAppointment?.id === selectedAppointmentForAction.id) {
@@ -283,8 +401,8 @@ export function PatientDashboard() {
    */
   const handleGenerateTicket = async () => {
     try {
-      // Generate unique ticket number (format: AFY-XXXXXX)
-      const ticketNumber = `AFY-${Math.random().toString().slice(2, 8).padEnd(6, '0')}`;
+      // Use the real patient token ID from the backend
+      const ticketNumber = patient?.tokenId || `AFYA-${Math.floor(1000 + Math.random() * 9000)}`;
       const currentTime = new Date().toLocaleTimeString();
 
       // Store ticket in state
@@ -388,10 +506,69 @@ Visit: www.afyaflow-hospital.local
             <h1 className="text-2xl font-bold text-foreground">AfyaFlow</h1>
           </div>
           <div className="flex items-center gap-4">
-            <button className="relative p-2 hover:bg-muted rounded-lg transition-colors">
-              <Bell className="w-6 h-6 text-foreground" />
-              <span className="absolute top-1 right-1 w-2 h-2 bg-destructive rounded-full"></span>
-            </button>
+            <div className="relative">
+              <button 
+                onClick={() => setShowNotifications(!showNotifications)}
+                className={`relative p-2 rounded-lg transition-colors ${showNotifications ? 'bg-primary/10' : 'hover:bg-muted'}`}
+              >
+                <Bell className={`w-6 h-6 ${unreadCount > 0 ? 'text-primary animate-pulse' : 'text-foreground'}`} />
+                {unreadCount > 0 && (
+                  <span className="absolute top-1 right-1 w-4 h-4 bg-destructive text-white text-[8px] font-black rounded-full flex items-center justify-center border-2 border-white">
+                    {unreadCount}
+                  </span>
+                )}
+              </button>
+
+              {/* Notification Dropdown */}
+              {showNotifications && (
+                <div className="absolute right-0 mt-3 w-80 bg-white border border-border rounded-2xl shadow-2xl z-[110] overflow-hidden animate-in slide-in-from-top-2 duration-200">
+                  <div className="p-4 border-b border-border flex items-center justify-between bg-muted/30">
+                    <h3 className="font-bold text-sm">Notifications</h3>
+                    {unreadCount > 0 && (
+                      <button 
+                        onClick={handleMarkAllRead}
+                        className="text-[10px] font-bold text-primary hover:underline"
+                      >
+                        Mark all as read
+                      </button>
+                    )}
+                  </div>
+                  <div className="max-h-96 overflow-y-auto">
+                    {notifications.length > 0 ? (
+                      notifications.map(n => (
+                        <div 
+                          key={n.id} 
+                          onClick={() => !n.isRead && handleMarkAsRead(n.id)}
+                          className={`p-4 border-b border-border last:border-0 cursor-pointer transition-colors ${n.isRead ? 'opacity-60' : 'bg-primary/5 hover:bg-primary/10'}`}
+                        >
+                          <div className="flex items-start gap-3">
+                            <div className={`w-2 h-2 mt-1.5 rounded-full shrink-0 ${n.isRead ? 'bg-muted' : 'bg-primary'}`} />
+                            <div className="flex-1">
+                              <p className="text-sm font-bold text-foreground leading-tight mb-1">{n.title}</p>
+                              <p className="text-xs text-muted-foreground line-clamp-2">{n.message}</p>
+                              <p className="text-[9px] text-muted-foreground mt-2 font-medium">
+                                {new Date(n.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                              </p>
+                            </div>
+                          </div>
+                        </div>
+                      ))
+                    ) : (
+                      <div className="p-8 text-center">
+                        <Bell className="w-8 h-8 text-muted-foreground/20 mx-auto mb-2" />
+                        <p className="text-xs text-muted-foreground font-medium">No notifications yet</p>
+                      </div>
+                    )}
+                  </div>
+                  {notifications.length > 0 && (
+                    <div className="p-3 bg-muted/10 border-t border-border text-center">
+                      <p className="text-[10px] text-muted-foreground font-medium">Stay updated with AfyaFlow</p>
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+
             <div className="flex items-center gap-3 pl-4 border-l border-border">
               <div className="w-10 h-10 rounded-full bg-primary text-primary-foreground flex items-center justify-center">
                 {patientInitials}
@@ -400,17 +577,13 @@ Visit: www.afyaflow-hospital.local
                 <p className="font-medium text-foreground">
                   {patient ? `${patient.firstName} ${patient.lastName}` : 'Patient'}
                 </p>
-                <p className="text-sm text-muted-foreground">Patient</p>
+                <p className="text-[10px] font-black text-primary uppercase tracking-tighter">
+                  {currentTime.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })}
+                </p>
               </div>
             </div>
             <button
-              onClick={() => {
-                // Ask for logout confirmation before clearing session
-                if (window.confirm('Are you sure you want to log out? You will need to log in again.')) {
-                  clearAccessToken();
-                  navigate('/');
-                }
-              }}
+              onClick={() => setShowLogoutModal(true)}
               className="p-2 hover:bg-muted rounded-lg transition-colors"
             >
               <LogOut className="w-5 h-5 text-muted-foreground" />
@@ -454,19 +627,19 @@ Visit: www.afyaflow-hospital.local
             
             <div className="grid md:grid-cols-4 gap-8 relative z-10">
               <div className="space-y-1">
-                <p className="text-[10px] font-black uppercase tracking-widest text-primary">Your Token</p>
-                <p className="text-4xl font-black text-foreground">#{upcomingAppointment.queueNumber || '—'}</p>
+                <p className="text-[10px] font-black uppercase tracking-widest text-primary">Your Token ID</p>
+                <p className="text-3xl font-black text-foreground">{upcomingAppointment.queueNumber || '—'}</p>
                 <p className="text-xs text-muted-foreground font-medium">Use this at the desk</p>
               </div>
               
               <div className="space-y-1">
                 <p className="text-[10px] font-black uppercase tracking-widest text-secondary">Est. Wait Time</p>
                 <p className="text-3xl font-black text-foreground">
-                  {upcomingAppointment.queueNumber && !isNaN(parseInt(upcomingAppointment.queueNumber)) 
-                    ? `${parseInt(upcomingAppointment.queueNumber) * 12} mins` 
-                    : '15 mins'}
+                  {queueStats ? `${queueStats.estimatedWaitTime} mins` : 'Syncing...'}
                 </p>
-                <p className="text-xs text-muted-foreground font-medium">Approximate timing</p>
+                <p className="text-xs text-muted-foreground font-medium">
+                  {queueStats ? `Clinic Status: ${queueStats.doctorStatus}` : 'Connecting to clinic...'}
+                </p>
               </div>
 
               <div className="space-y-1 md:col-span-2 flex flex-col justify-center">
@@ -484,18 +657,15 @@ Visit: www.afyaflow-hospital.local
               </div>
             </div>
             
-            <div className="mt-8 flex items-center gap-3 text-sm">
-              <div className="flex -space-x-2">
-                {[1,2,3].map(i => (
-                  <div key={i} className="w-8 h-8 rounded-full border-2 border-white bg-muted flex items-center justify-center text-[10px] font-bold">
-                    {String.fromCharCode(64 + i)}
-                  </div>
-                ))}
-              </div>
               <p className="text-muted-foreground font-medium">
-                <span className="text-foreground font-bold">4 patients</span> ahead of you in {upcomingAppointment.department}
+                {queueStats ? (
+                  <>
+                    There are <span className="text-foreground font-bold">{queueStats.patientsAhead} patients</span> ahead of you.
+                  </>
+                ) : (
+                  <>Connecting to live queue tracking...</>
+                )}
               </p>
-            </div>
           </div>
         )}
 
@@ -626,8 +796,8 @@ Visit: www.afyaflow-hospital.local
                     <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-2 block">Phone Number</label>
                     <input
                       type="tel"
-                      value={editData.phoneNumber || ''}
-                      onChange={(e) => setEditData({ ...editData, phoneNumber: e.target.value })}
+                      value={editData.phone || ''}
+                      onChange={(e) => setEditData({ ...editData, phone: e.target.value })}
                       className="w-full px-3 py-2 bg-slate-800 border border-slate-700 rounded-lg text-white focus:outline-none focus:ring-2 focus:ring-primary"
                     />
                   </div>
@@ -690,7 +860,7 @@ Visit: www.afyaflow-hospital.local
                   </div>
                   <div>
                     <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1">Phone Number</p>
-                    <p className="font-bold">{patient?.phoneNumber || 'Not provided'}</p>
+                    <p className="font-bold">{patient?.phone || 'Not provided'}</p>
                   </div>
                   <div>
                     <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1">Residential Address</p>
@@ -723,6 +893,59 @@ Visit: www.afyaflow-hospital.local
                 </div>
               </div>
             </div>
+
+            {/* HEALTH METRICS SECTION [NEW] */}
+            {patient?.vitalsJson && JSON.parse(patient.vitalsJson).length > 0 && (
+              <div className="bg-white rounded-3xl p-8 border border-border shadow-sm">
+                <h4 className="font-bold text-foreground mb-4 flex items-center gap-2">
+                  <Activity className="w-5 h-5 text-primary" /> Health Metrics
+                </h4>
+                <div className="grid grid-cols-2 gap-3">
+                  {(() => {
+                    const vitals = JSON.parse(patient.vitalsJson);
+                    const latest = vitals[vitals.length - 1];
+                    return (
+                      <>
+                        <div className="bg-muted/30 p-3 rounded-xl">
+                          <p className="text-[10px] font-bold text-muted-foreground uppercase">BP</p>
+                          <p className="text-sm font-black text-foreground">{latest.bloodPressure}</p>
+                        </div>
+                        <div className="bg-muted/30 p-3 rounded-xl">
+                          <p className="text-[10px] font-bold text-muted-foreground uppercase">Temp</p>
+                          <p className="text-sm font-black text-foreground">{latest.temperature}°C</p>
+                        </div>
+                        <div className="bg-muted/30 p-3 rounded-xl">
+                          <p className="text-[10px] font-bold text-muted-foreground uppercase">Heart Rate</p>
+                          <p className="text-sm font-black text-foreground">{latest.heartRate} bpm</p>
+                        </div>
+                        <div className="bg-muted/30 p-3 rounded-xl">
+                          <p className="text-[10px] font-bold text-muted-foreground uppercase">SpO2</p>
+                          <p className="text-sm font-black text-foreground">{latest.oxygenSaturation}%</p>
+                        </div>
+                      </>
+                    );
+                  })()}
+                </div>
+              </div>
+            )}
+
+            {/* ACTIVE PRESCRIPTIONS SECTION [NEW] */}
+            {patient?.prescriptionsJson && JSON.parse(patient.prescriptionsJson).length > 0 && (
+              <div className="bg-primary/5 rounded-3xl p-8 border border-primary/10">
+                <h4 className="font-bold text-primary mb-4 flex items-center gap-2">
+                  <Check className="w-5 h-5" /> Prescriptions
+                </h4>
+                <div className="space-y-3">
+                  {JSON.parse(patient.prescriptionsJson).map((rx: any, idx: number) => (
+                    <div key={idx} className="bg-white rounded-xl p-4 border border-primary/10 shadow-sm">
+                      <p className="font-bold text-sm text-foreground">{rx.medicineName}</p>
+                      <p className="text-[10px] text-muted-foreground">{rx.dosage} • {rx.frequency}</p>
+                      <p className="text-[9px] text-primary mt-1 font-medium">{rx.instructions}</p>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
           </div>
         </div>
 
@@ -798,30 +1021,13 @@ Visit: www.afyaflow-hospital.local
         {actionType === 'cancel' && selectedAppointmentForAction && (
           <div className="fixed inset-0 bg-black/50 flex items-center justify-center p-4 z-50">
             <div className="bg-white rounded-3xl p-8 max-w-md w-full shadow-2xl">
-              <div className="flex items-center justify-between mb-6">
-                <h2 className="text-2xl font-bold text-destructive">Cancel Appointment?</h2>
-                <button
-                  onClick={() => {
-                    setActionType(null);
-                    setSelectedAppointmentForAction(null);
-                  }}
-                  className="p-1 hover:bg-muted rounded-lg"
-                >
-                  <X className="w-6 h-6" />
-                </button>
+              <div className="w-16 h-16 bg-red-100 rounded-full flex items-center justify-center mx-auto mb-6">
+                <Trash2 className="w-8 h-8 text-red-600" />
               </div>
-
-              <div className="mb-6">
-                <p className="text-sm text-muted-foreground mb-4">
-                  You are about to cancel your appointment scheduled for:
-                </p>
-                <div className="bg-muted/50 rounded-xl p-4">
-                  <p className="font-bold text-foreground">{selectedAppointmentForAction.department}</p>
-                  <p className="text-sm text-muted-foreground">{selectedAppointmentForAction.date} • {selectedAppointmentForAction.time}</p>
-                  <p className="text-sm text-muted-foreground">Doctor: {selectedAppointmentForAction.doctor || 'To be assigned'}</p>
-                </div>
-              </div>
-
+              <h3 className="text-xl font-bold text-center mb-2">Cancel Appointment?</h3>
+              <p className="text-muted-foreground text-center mb-8">
+                Are you sure you want to cancel your appointment with {selectedAppointmentForAction.department}? This action cannot be undone.
+              </p>
               <div className="flex gap-3">
                 <button
                   onClick={() => {
@@ -830,20 +1036,53 @@ Visit: www.afyaflow-hospital.local
                   }}
                   className="flex-1 bg-muted text-foreground py-3 rounded-xl font-bold hover:bg-muted/80 transition-colors"
                 >
-                  Keep Appointment
+                  Keep It
                 </button>
                 <button
                   onClick={handleCancelAppointment}
                   disabled={isRescheduling}
-                  className="flex-1 bg-destructive text-white py-3 rounded-xl font-bold hover:bg-destructive/90 transition-colors disabled:opacity-70 flex items-center justify-center gap-2"
+                  className="flex-1 bg-red-600 text-white py-3 rounded-xl font-bold hover:bg-red-700 transition-colors disabled:opacity-70 flex items-center justify-center gap-2"
                 >
                   <Trash2 className="w-5 h-5" />
-                  {isRescheduling ? 'Cancelling...' : 'Cancel'}
+                  {isRescheduling ? 'Cancelling...' : 'Cancel It'}
                 </button>
               </div>
             </div>
           </div>
         )}
+
+        {/* LOGOUT CONFIRMATION MODAL */}
+        {showLogoutModal && (
+          <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-slate-900/40 backdrop-blur-sm animate-in fade-in duration-200">
+            <div className="bg-white rounded-3xl p-8 max-w-sm w-full shadow-2xl animate-in zoom-in-95 duration-200 border border-slate-200">
+              <div className="w-16 h-16 bg-red-50 rounded-full flex items-center justify-center mx-auto mb-6">
+                <LogOut className="w-8 h-8 text-red-500 translate-x-0.5" />
+              </div>
+              <h3 className="text-xl font-bold text-center text-slate-900 mb-2">Ready to Leave?</h3>
+              <p className="text-slate-500 text-center text-sm mb-8">
+                Are you sure you want to log out? You will need to sign in again to access your dashboard.
+              </p>
+              <div className="flex gap-3">
+                <button 
+                  onClick={() => setShowLogoutModal(false)}
+                  className="flex-1 px-4 py-3 bg-slate-100 text-slate-700 rounded-xl font-semibold hover:bg-slate-200 transition-colors"
+                >
+                  Cancel
+                </button>
+                <button 
+                  onClick={() => {
+                    clearAccessToken();
+                    navigate('/');
+                  }}
+                  className="flex-1 px-4 py-3 bg-red-600 text-white rounded-xl font-semibold hover:bg-red-700 shadow-lg shadow-red-600/20 transition-colors"
+                >
+                  Sign Out
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+
 
         {/* QUEUE TICKET DOWNLOAD MODAL */}
         {showTicketModal && generatedTicket && upcomingAppointment && (
@@ -861,7 +1100,7 @@ Visit: www.afyaflow-hospital.local
 
               <div className="bg-gradient-to-br from-primary to-primary/80 text-white rounded-2xl p-8 mb-6 text-center">
                 <p className="text-[10px] font-bold uppercase tracking-widest opacity-90 mb-3">Your Ticket Number</p>
-                <p className="text-5xl font-black mb-2">{generatedTicket.number}</p>
+                <p className="text-4xl font-black mb-2">{generatedTicket.number}</p>
                 <p className="text-[10px] opacity-75">Generated at {generatedTicket.time}</p>
               </div>
 

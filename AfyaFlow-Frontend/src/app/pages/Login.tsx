@@ -6,6 +6,17 @@ import { loginApi, roleToRoute } from '../../lib/api';
 import { setAuthSession } from '../../lib/authStorage';
 import { hasBookingData } from '../../lib/bookingService';
 
+/**
+ * LOGIN PAGE
+ * Handles user authentication, SSO token redirection for staff,
+ * and restoration of booking progress for patients.
+ * 
+ * Flow:
+ * 1. User enters credentials OR arrives with SSO token in URL
+ * 2. App validates/intercepts token
+ * 3. Session is established in localStorage
+ * 4. User is routed based on role OR redirected to finish booking
+ */
 export function Login() {
   const navigate = useNavigate();
   const [showPassword, setShowPassword] = useState(false);
@@ -69,8 +80,8 @@ export function Login() {
         navigate(roleToRoute(res.role)); // Normal flow to dashboard
       }
     } catch (err) {
-      const message = err instanceof Error ? err.message : 'Login failed';
-      toast.error("Login Failed");
+      console.error('Login error:', err);
+      toast.error("Invalid credentials. Please try again.");
     }
   };
 

@@ -83,6 +83,35 @@ public class PatientService {
         return patientMapper.toDTO(updated);
     }
 
+    public PatientDTO updatePatient(Long id, PatientDTO dto) {
+        Patient existing = patientRepository.findById(id)
+                .orElseThrow(() -> new ResourceNotFoundException("Patient not found with id: " + id));
+        
+        // Update fields if present in DTO
+        if (dto.getFirstName() != null) existing.setFirstName(dto.getFirstName());
+        if (dto.getLastName() != null) existing.setLastName(dto.getLastName());
+        if (dto.getFirstName() != null || dto.getLastName() != null) {
+            existing.setName((existing.getFirstName() != null ? existing.getFirstName() : "") + " " + 
+                             (existing.getLastName() != null ? existing.getLastName() : ""));
+        }
+        if (dto.getEmail() != null) existing.setEmail(dto.getEmail());
+        if (dto.getPhone() != null) existing.setPhone(dto.getPhone());
+        if (dto.getAddress() != null) existing.setAddress(dto.getAddress());
+        if (dto.getGender() != null) existing.setGender(dto.getGender());
+        if (dto.getDob() != null) existing.setDob(dto.getDob());
+        if (dto.getVitalsJson() != null) existing.setVitalsJson(dto.getVitalsJson());
+        if (dto.getPrescriptionsJson() != null) existing.setPrescriptionsJson(dto.getPrescriptionsJson());
+        if (dto.getReferralsJson() != null) existing.setReferralsJson(dto.getReferralsJson());
+        if (dto.getConsultationNotes() != null) existing.setConsultationNotes(dto.getConsultationNotes());
+        if (dto.getDiagnosis() != null) existing.setDiagnosis(dto.getDiagnosis());
+        
+        Patient saved = patientRepository.save(existing);
+        auditService.log("PATIENT_PROFILE_UPDATED", "Patient", saved.getId().toString(), 
+                "Profile updated for patient " + saved.getName());
+        
+        return patientMapper.toDTO(saved);
+    }
+
     public void deletePatient(Long id) {
         if (!patientRepository.existsById(id)) {
             throw new ResourceNotFoundException("Patient not found with id: " + id);
@@ -91,7 +120,8 @@ public class PatientService {
     }
 
     private String generateTokenId() {
-        long count = patientRepository.count();
-        return String.format("AFY-%03d", count + 1);
+        // Use a 10-digit random number as requested: AFYA-1407832147
+        long randomNum = (long)(Math.random() * 9_000_000_000L) + 1_000_000_000L;
+        return "AFYA-" + randomNum;
     }
 }

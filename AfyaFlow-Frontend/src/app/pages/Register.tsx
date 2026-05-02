@@ -4,6 +4,28 @@ import { Activity, Eye, EyeOff, Mail, Lock, User, Phone, MapPin, Calendar } from
 import { toast } from 'sonner';
 import { registerApi, roleToRoute } from '../../lib/api';
 import { setAuthSession } from '../../lib/authStorage';
+import { hasBookingData } from '../../lib/bookingService';
+import { z } from 'zod';
+
+/**
+ * REGISTRATION SCHEMA
+ * Defines validation rules for the patient registration form.
+ */
+const registerSchema = z.object({
+  fullName: z.string().min(3, "Full name must be at least 3 characters"),
+  email: z.string().email("Invalid email address"),
+  phone: z.string().regex(/^\d{9,10}$/, "Phone must be 9 or 10 digits"),
+  password: z.string().min(8, "Password must be at least 8 characters")
+    .regex(/[A-Z]/, "Password must contain an uppercase letter")
+    .regex(/[0-9]/, "Password must contain a number"),
+  confirmPassword: z.string(),
+  dob: z.string().refine((date) => new Date(date) < new Date(), "Birth date must be in the past"),
+  gender: z.enum(['MALE', 'FEMALE', 'OTHER']),
+  nationalId: z.string().min(6, "ID must be at least 6 digits"),
+}).refine((data) => data.password === data.confirmPassword, {
+  message: "Passwords do not match",
+  path: ["confirmPassword"],
+});
 
 export function Register() {
   const navigate = useNavigate();
@@ -49,34 +71,29 @@ function getPasswordStrength(password: string) {
   return { label: 'Weak', color: 'bg-red-400', width: '40%' };
 }
 
+  /**
+   * HANDLE FORM SUBMISSION
+   * Validates data with Zod and sends registration request to backend.
+   */
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
 
-    const today = new Date();
-const dobDate = new Date(formData.dob);
-
-if (dobDate > today) {
-  setErrors({ dob: 'Date of birth cannot be in the future' });
-  return;
-}
-    
-    if (formData.password !== formData.confirmPassword) {
-      toast.error('Passwords do not match');
+    // Validate with Zod
+    const validation = registerSchema.safeParse(formData);
+    if (!validation.success) {
+      const firstError = validation.error.issues[0];
+      toast.error(firstError.message);
       return;
     }
 
-    if (formData.password.length < 8) {
-      toast.error('Password must be at least 8 characters');
+    if (!county || !location) {
+      toast.error('Please select county and location');
       return;
     }
 
     const nameParts = formData.fullName.trim().split(/\s+/);
     const firstName = nameParts[0] || '';
-    const lastName = nameParts.slice(1).join(' ') || '';
-    if (!firstName || !lastName) {
-      toast.error('Please enter first and last name');
-      return;
-    }
+    const lastName = nameParts.slice(1).join(' ') || 'Patient';
 
     try {
       const res = await registerApi({
@@ -98,7 +115,14 @@ if (dobDate > today) {
 
       setAuthSession(res.accessToken, res.role, res.userId);
       toast.success('Registration successful!');
-      navigate(roleToRoute(res.role));
+      
+      // Check if user has pending booking
+      if (hasBookingData()) {
+        console.log('Booking data found, redirecting to complete booking');
+        navigate('/book-appointment'); // Go back to booking with data restored
+      } else {
+        navigate(roleToRoute(res.role));
+      }
     } catch (err) {
       const message = err instanceof Error ? err.message : 'Registration failed';
       toast.error(message);

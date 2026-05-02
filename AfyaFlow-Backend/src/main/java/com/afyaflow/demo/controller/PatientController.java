@@ -20,6 +20,24 @@ import com.afyaflow.demo.service.PatientService;
 
 import jakarta.validation.Valid;
 
+/**
+ * =========================================================
+ * PATIENT CONTROLLER - Patient & Medical Registry API
+ * =========================================================
+ * 
+ * PURPOSE:
+ *   Manages patient registration, profile retrieval, and status updates.
+ *   This is the primary interface for patient-facing dashboard data
+ *   and receptionist registration workflows.
+ * 
+ * KEY FEATURES:
+ *   - Profile management for logged-in patients (/me)
+ *   - Status tracking (queued, in-progress, served)
+ *   - Centralized registry for all hospital patients
+ * 
+ * @author AfyaFlow Development Team
+ * @date April 2026
+ */
 @RestController
 @RequestMapping("/api/patients")
 public class PatientController {
@@ -30,6 +48,13 @@ public class PatientController {
         this.service = service;
     }
 
+    /**
+     * REGISTER PATIENT
+     * Creates a new patient record. Used by the login/registration flow
+     * and by receptionists for walk-in admissions.
+     * @param patientDTO Validated patient data
+     * @return The created patient record
+     */
     @PostMapping
     public ResponseEntity<PatientDTO> createPatient(@Valid @RequestBody PatientDTO patientDTO) {
         PatientDTO saved = service.registerPatient(patientDTO);
@@ -41,6 +66,12 @@ public class PatientController {
         return service.getAllPatients();
     }
 
+    /**
+     * GET LOGGED-IN PROFILE
+     * Retrieves the profile of the currently authenticated user.
+     * @param principal The security principal (JWT holder)
+     * @return The patient's own profile data
+     */
     @GetMapping("/me")
     public ResponseEntity<PatientDTO> getMyProfile(Principal principal) {
         if (principal == null) return ResponseEntity.status(HttpStatus.UNAUTHORIZED).build();
@@ -55,6 +86,11 @@ public class PatientController {
     @PutMapping("/{id}/status")
     public ResponseEntity<PatientDTO> updateStatus(@PathVariable Long id, @RequestParam String status) {
         return ResponseEntity.ok(service.updatePatientStatus(id, status));
+    }
+
+    @PutMapping("/{id}")
+    public ResponseEntity<PatientDTO> updatePatient(@PathVariable Long id, @RequestBody PatientDTO patientDTO) {
+        return ResponseEntity.ok(service.updatePatient(id, patientDTO));
     }
 
     @DeleteMapping("/{id}")

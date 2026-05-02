@@ -33,22 +33,25 @@ const AddPrescriptionModal: React.FC<AddPrescriptionModalProps> = ({ onClose, on
 
   return (
     <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm animate-in fade-in duration-300">
-      <div className="w-full max-w-lg animate-in zoom-in-95 duration-300">
-        <DashboardCard className="p-8 shadow-2xl border-outline-variant/20 bg-white">
-          <div className="flex justify-between items-center mb-6">
-            <div>
-              <h2 className="text-2xl font-black text-primary tracking-tight">Add Prescription</h2>
-              <p className="text-xs text-on-surface-variant font-medium mt-1">Issue medications to active patient</p>
+      <div className="w-full max-w-lg max-h-[80vh] flex flex-col animate-in zoom-in-95 duration-300">
+        <DashboardCard className="shadow-2xl border-outline-variant/20 bg-white flex flex-col overflow-hidden">
+          <div className="p-8 pb-4 shrink-0 border-b border-outline-variant/10">
+            <div className="flex justify-between items-center">
+              <div>
+                <h2 className="text-2xl font-black text-primary tracking-tight">Add Prescription</h2>
+                <p className="text-xs text-on-surface-variant font-medium mt-1">Issue medications to active patient</p>
+              </div>
+              <button 
+                onClick={onClose}
+                className="h-10 w-10 rounded-full flex items-center justify-center hover:bg-surface-container-low transition-colors text-on-surface-variant"
+              >
+                <span className="material-symbols-outlined">close</span>
+              </button>
             </div>
-            <button 
-              onClick={onClose}
-              className="h-10 w-10 rounded-full flex items-center justify-center hover:bg-surface-container-low transition-colors text-on-surface-variant"
-            >
-              <span className="material-symbols-outlined">close</span>
-            </button>
           </div>
 
-          <form onSubmit={handleSubmit} className="space-y-5">
+          <form onSubmit={handleSubmit} className="flex-1 flex flex-col min-h-0">
+            <div className="p-8 space-y-5 overflow-y-auto custom-scrollbar">
             <Input 
               label="Medicine Name" 
               placeholder="e.g. Amoxicillin" 
@@ -89,7 +92,9 @@ const AddPrescriptionModal: React.FC<AddPrescriptionModalProps> = ({ onClose, on
               />
             </div>
 
-            <div className="pt-4 flex gap-4">
+            </div>
+
+            <div className="p-6 border-t border-outline-variant/10 bg-surface-container-lowest shrink-0 flex gap-4">
               <SignatureButton variant="clear" type="button" onClick={onClose} className="flex-1">
                 Cancel
               </SignatureButton>

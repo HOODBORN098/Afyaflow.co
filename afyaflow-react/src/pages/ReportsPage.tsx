@@ -12,10 +12,33 @@ type ReportType = 'patient_volume' | 'department_load' | 'clinical_kpis' | 'morb
 
 const COLORS = ['#005050', '#2c694e', '#6b7280', '#dc2626', '#d97706', '#7c3aed'];
 
-const VOLUME_DATA: any[] = [];
-const MORBIDITY_DATA: any[] = [];
-const DEPT_LOAD_DATA: any[] = [];
-const KPI_DATA: any[] = [];
+const VOLUME_DATA = [
+  { day: 'Mon', patients: 120, admitted: 15 },
+  { day: 'Tue', patients: 132, admitted: 18 },
+  { day: 'Wed', patients: 101, admitted: 12 },
+  { day: 'Thu', patients: 145, admitted: 20 },
+  { day: 'Fri', patients: 150, admitted: 22 },
+  { day: 'Sat', patients: 90, admitted: 10 },
+  { day: 'Sun', patients: 85, admitted: 8 },
+];
+
+const MORBIDITY_DATA = [
+  { name: 'Malaria', value: 45 },
+  { name: 'Respiratory Tract Infection', value: 38 },
+  { name: 'Gastroenteritis', value: 25 },
+  { name: 'Hypertension', value: 20 },
+  { name: 'Diabetes', value: 15 },
+];
+
+// Dynamic department load data will be calculated inside the component
+const KPI_DATA = [
+  { metric: 'Avg Wait Time', value: '18 min', trend: '-2 min', good: true },
+  { metric: 'Bed Occupancy', value: '78%', trend: '+5%', good: false },
+  { metric: 'Patient Satisfaction', value: '4.8/5', trend: '+0.2', good: true },
+  { metric: 'Treatment Success', value: '94%', trend: '+1%', good: true },
+  { metric: 'Staff Ratio', value: '1:4', trend: 'steady', good: true },
+  { metric: 'Readmission Rate', value: '3.2%', trend: '-0.5%', good: true },
+];
 const REPORT_TYPES: { key: ReportType; label: string; icon: string; desc: string }[] = [
   { key: 'patient_volume',  label: 'Patient Volume',    icon: 'group',            desc: 'Daily admissions and trends for the week' },
   { key: 'department_load', label: 'Department Load',   icon: 'apartment',        desc: 'Patient distribution across clinical areas' },
@@ -29,6 +52,29 @@ const ReportsPage: React.FC = () => {
   const [activeReport, setActiveReport] = useState<ReportType>('patient_volume');
   const [search, setSearch] = useState(searchQuery);
   const [dateRange, setDateRange] = useState('this_week');
+
+  const deptLoadData = React.useMemo(() => {
+    if (patients.length === 0) {
+      // Fallback data for demonstration if no patients exist yet
+      return [
+        { dept: 'General', patients: 85 },
+        { dept: 'Pediatrics', patients: 45 },
+        { dept: 'Maternity', patients: 35 },
+        { dept: 'Surgery', patients: 25 },
+        { dept: 'Orthopedics', patients: 20 },
+      ];
+    }
+    
+    const counts = patients.reduce((acc, p) => {
+      const d = p.department || 'Unassigned';
+      acc[d] = (acc[d] || 0) + 1;
+      return acc;
+    }, {} as Record<string, number>);
+    
+    return Object.entries(counts)
+      .map(([dept, count]) => ({ dept, patients: count }))
+      .sort((a, b) => b.patients - a.patients);
+  }, [patients]);
 
   // Sync local search with global search
   useEffect(() => {
@@ -46,8 +92,16 @@ const ReportsPage: React.FC = () => {
   const deptCount       = departments.length;
 
   const handleExportCSV = () => {
-    const headers = Object.keys(VOLUME_DATA[0]).join(',');
-    const rows    = VOLUME_DATA.map(r => Object.values(r).join(','));
+    let dataToExport: any[] = [];
+    if (activeReport === 'patient_volume') dataToExport = VOLUME_DATA;
+    else if (activeReport === 'morbidity') dataToExport = MORBIDITY_DATA;
+    else if (activeReport === 'department_load') dataToExport = deptLoadData;
+    else if (activeReport === 'clinical_kpis') dataToExport = KPI_DATA;
+
+    if (dataToExport.length === 0) return;
+
+    const headers = Object.keys(dataToExport[0]).join(',');
+    const rows    = dataToExport.map(r => Object.values(r).join(','));
     const csv     = [headers, ...rows].join('\n');
     const blob    = new Blob([csv], { type: 'text/csv' });
     const url     = URL.createObjectURL(blob);
@@ -153,13 +207,13 @@ const ReportsPage: React.FC = () => {
         {activeReport === 'department_load' && (
           <div className="h-72 min-h-72">
             <ResponsiveContainer width="100%" height="100%">
-              <BarChart data={DEPT_LOAD_DATA} layout="vertical">
+              <BarChart data={deptLoadData} layout="vertical">
                 <CartesianGrid strokeDasharray="3 3" horizontal={false} stroke="#E2E8F0" />
                 <XAxis type="number" axisLine={false} tickLine={false} tick={{ fill: '#64748B', fontSize: 11 }} />
                 <YAxis dataKey="dept" type="category" axisLine={false} tickLine={false} tick={{ fill: '#64748B', fontSize: 11, fontWeight: 700 }} width={80} />
                 <Tooltip contentStyle={{ borderRadius: '12px', border: 'none', boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.1)' }} />
                 <Bar dataKey="patients" fill="#005050" radius={[0, 6, 6, 0]} name="Patients">
-                  {DEPT_LOAD_DATA.map((_, i) => <Cell key={i} fill={COLORS[i % COLORS.length]} />)}
+                  {deptLoadData.map((_, i) => <Cell key={i} fill={COLORS[i % COLORS.length]} />)}
                 </Bar>
               </BarChart>
             </ResponsiveContainer>

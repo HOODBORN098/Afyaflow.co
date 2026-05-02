@@ -11,6 +11,16 @@ import AddPrescriptionModal from '../components/modals/AddPrescriptionModal';
 import ReferralModal from '../components/modals/ReferralModal';
 import AssignBedModal from '../components/modals/AssignBedModal';
 import { startDoctorAppointmentMonitoring, confirmAppointment, type NewAppointment } from '../lib/notificationService';
+/**
+ * DOCTOR DASHBOARD
+ * Primary workspace for clinical staff.
+ * 
+ * CORE FEATURES:
+ *   - Real-time Queue Management: Sorted by priority and check-in time.
+ *   - Patient Vitals & Records: Quick access to medical history.
+ *   - Consultation Actions: Prescriptions, referrals, and bed assignments.
+ *   - Live Alerts: Notification service polls for new bookings.
+ */
 const DoctorDashboard: React.FC = () => {
   const { patients, updatePatientStatus, addPrescription, addReferral, wards, isAssignedToBed } = useData();
   const { searchQuery, setSearchQuery } = useSearch();
@@ -20,6 +30,7 @@ const DoctorDashboard: React.FC = () => {
   // ========== NEW APPOINTMENT MONITORING ==========
   const [appointmentAlert, setAppointmentAlert] = useState<NewAppointment | null>(null);
   const [showAppointmentAlert, setShowAppointmentAlert] = useState(false);
+  const [upcomingAppointments, setUpcomingAppointments] = useState<NewAppointment[]>([]);
 
   // Sync local search with global search
   useEffect(() => {
@@ -35,7 +46,7 @@ const DoctorDashboard: React.FC = () => {
       // Show toast alert
       setAppointmentAlert(appointment);
       setShowAppointmentAlert(true);
-
+      
       // Auto-hide alert after 5 seconds
       setTimeout(() => setShowAppointmentAlert(false), 5000);
     };
@@ -46,7 +57,8 @@ const DoctorDashboard: React.FC = () => {
     const stopMonitoring = startDoctorAppointmentMonitoring(
       doctorId,
       handleNewAppointment,
-      3000 // Poll every 3 seconds
+      3000, // Poll every 3 seconds
+      (appointments) => setUpcomingAppointments(appointments)
     );
 
     // Cleanup on unmount
@@ -58,18 +70,22 @@ const DoctorDashboard: React.FC = () => {
     setSearchQuery(val);
   };
 
-  // ========== HANDLE APPOINTMENT CONFIRMATION ==========
+  /**
+   * CONFIRM APPOINTMENT
+   * Moves a pending appointment to the active queue.
+   */
   const handleConfirmAppointment = async (appointmentId: number) => {
     if (!user?.id) return;
     try {
       const doctorId = Number(user.id);
       const success = await confirmAppointment(appointmentId, doctorId);
       if (success) {
-        setServedNotice('Appointment confirmed');
+        setServedNotice('Appointment confirmed and added to queue');
         setTimeout(() => setServedNotice(null), 3000);
       }
     } catch (error) {
       console.error('Error confirming appointment:', error);
+      setServedNotice('Failed to confirm appointment');
     }
   };
 
@@ -91,11 +107,15 @@ const DoctorDashboard: React.FC = () => {
     .sort((a, b) => {
       if (a.status === 'in-progress') return -1;
       if (b.status === 'in-progress') return 1;
-      const priorityOrder = { emergency: 0, urgent: 1, standard: 2 };
-      if (priorityOrder[a.priority] !== priorityOrder[b.priority]) {
-        return priorityOrder[a.priority] - priorityOrder[b.priority];
+      const priorityOrder: Record<string, number> = { emergency: 0, urgent: 1, standard: 2 };
+      const aPrio = priorityOrder[a.priority || 'standard'] ?? 2;
+      const bPrio = priorityOrder[b.priority || 'standard'] ?? 2;
+      if (aPrio !== bPrio) {
+        return aPrio - bPrio;
       }
-      return new Date(a.registeredAt).getTime() - new Date(b.registeredAt).getTime();
+      const aTime = a.registeredAt ? new Date(a.registeredAt).getTime() : 0;
+      const bTime = b.registeredAt ? new Date(b.registeredAt).getTime() : 0;
+      return aTime - bTime;
     });
 
   // Active patient: whoever is in-progress, else first in queue
@@ -218,17 +238,18 @@ const DoctorDashboard: React.FC = () => {
                         patient.priority === 'urgent' ? 'bg-secondary-container text-on-secondary-container' :
                           'bg-surface-container-high'}`}
                   >
-                    {patient.name.split(' ').map(n => n[0]).join('').slice(0, 2)}
+                    {(patient.name || `${patient.firstName || ''} ${patient.lastName || ''}`).trim().split(' ').map(n => n[0]).join('').slice(0, 2) || 'P'}
                   </div>
                   <div>
                     <div className="flex items-center gap-2">
-                      <h4 className="font-bold text-sm">{patient.name}</h4>
+                      <h4 className="font-bold text-sm">{patient.name || `${patient.firstName || ''} ${patient.lastName || ''}`}</h4>
+                      <span className="text-[9px] bg-surface-container-high text-on-surface-variant px-1.5 py-0.5 rounded font-mono font-bold">{patient.tokenId}</span>
                       {patient.status === 'in-progress' && (
                         <span className="text-[9px] bg-primary text-white px-1.5 py-0.5 rounded font-bold">ACTIVE</span>
                       )}
                     </div>
                     <p className="text-[10px] text-on-surface-variant uppercase tracking-wider font-semibold">
-                      {patient.priority !== 'standard' ? `${patient.priority.toUpperCase()} • ` : ''}{patient.department}
+                      {patient.priority !== 'standard' ? `${patient.priority.toUpperCase()} • ` : ''}{patient.department} • {new Date(patient.registeredAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
                     </p>
                   </div>
                 </div>
@@ -253,6 +274,42 @@ const DoctorDashboard: React.FC = () => {
             <p className="text-xs mt-2">Efficiency rating today. {servedToday} patients served.</p>
           </div>
           <span className="material-symbols-outlined absolute -right-4 -bottom-4 text-8xl opacity-10">medical_services</span>
+        </div>
+
+        {/* Upcoming Appointments Section */}
+        <div className="bg-surface-container-lowest p-6 rounded-2xl border border-outline-variant/10 shadow-sm">
+          <h3 className="text-xs font-bold uppercase tracking-wider text-on-surface-variant mb-4 flex items-center gap-2">
+            <span className="material-symbols-outlined text-sm">event_note</span>
+            Upcoming Appointments
+          </h3>
+          <div className="space-y-3 max-h-[400px] overflow-y-auto pr-2 custom-scrollbar">
+            {upcomingAppointments.length === 0 ? (
+              <p className="text-xs text-on-surface-variant italic py-4 text-center">No upcoming bookings for today.</p>
+            ) : (
+              upcomingAppointments
+                .filter(a => a.status !== 'cancelled')
+                .map((appt) => (
+                <div key={appt.id} className="p-3 bg-surface-container-low rounded-xl border border-outline-variant/5 flex justify-between items-center group">
+                  <div>
+                    <p className="text-sm font-bold text-on-surface">{appt.patientName}</p>
+                    <p className="text-[10px] text-on-surface-variant font-medium">
+                      {new Date(appt.appointmentTime).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                    </p>
+                  </div>
+                  {appt.status === 'pending' ? (
+                    <button 
+                      onClick={() => handleConfirmAppointment(appt.id)}
+                      className="text-[10px] font-bold text-primary hover:underline opacity-0 group-hover:opacity-100 transition-opacity"
+                    >
+                      Confirm
+                    </button>
+                  ) : (
+                    <span className="material-symbols-outlined text-secondary text-sm">check_circle</span>
+                  )}
+                </div>
+              ))
+            )}
+          </div>
         </div>
 
         {/* Department Load */}
@@ -287,7 +344,7 @@ const DoctorDashboard: React.FC = () => {
                 <div className="flex items-center gap-6">
                   <div className="relative">
                     <div className="w-20 h-20 rounded-2xl bg-primary/10 border-4 border-surface-container-low flex items-center justify-center font-black text-primary text-2xl">
-                      {activePatient.name.split(' ').map(n => n[0]).join('').slice(0, 2)}
+                      {(activePatient.name || `${activePatient.firstName || ''} ${activePatient.lastName || ''}`).trim().split(' ').map(n => n[0]).join('').slice(0, 2) || 'P'}
                     </div>
                     <span className="absolute -bottom-2 -right-2 bg-secondary text-white p-1 rounded-full text-[10px] px-2 font-bold uppercase tracking-widest">
                       {activePatient.status === 'in-progress' ? 'Active' : 'Next'}
@@ -295,7 +352,7 @@ const DoctorDashboard: React.FC = () => {
                   </div>
                   <div>
                     <div className="flex items-center gap-3">
-                      <h1 className="text-3xl font-black text-primary tracking-tight">{activePatient.name}</h1>
+                      <h1 className="text-3xl font-black text-primary tracking-tight">{activePatient.name || `${activePatient.firstName || ''} ${activePatient.lastName || ''}`}</h1>
                       <span className="bg-surface-container-high text-on-surface-variant px-3 py-1 rounded-full text-xs font-bold">{activePatient.tokenId}</span>
                     </div>
                     <p className="text-on-surface-variant font-medium mt-1">

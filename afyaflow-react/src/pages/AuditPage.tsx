@@ -54,6 +54,24 @@ const AuditPage: React.FC = () => {
   const criticalEvents = auditLogs.filter(e => e.action === 'DEPARTMENT_DELETED').length;
   const uniqueActors   = new Set(auditLogs.map(e => e.actorUsername)).size;
 
+  const handleExportCSV = () => {
+    if (filtered.length === 0) return;
+    const headers = ['Timestamp', 'Actor', 'Role', 'Action', 'Entity Type', 'Entity ID', 'Details'].join(',');
+    const rows = filtered.map(e => {
+      const ts = new Date(e.timestamp).toISOString();
+      const details = `"${e.details.replace(/"/g, '""')}"`;
+      return [ts, e.actorUsername, e.actorRole, e.action, e.entityType, e.entityId, details].join(',');
+    });
+    const csv = [headers, ...rows].join('\n');
+    const blob = new Blob([csv], { type: 'text/csv' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `afyaflow_audit_logs_${new Date().toISOString().split('T')[0]}.csv`;
+    a.click();
+    URL.revokeObjectURL(url);
+  };
+
   return (
     <div className="space-y-8">
       <div>
@@ -144,7 +162,7 @@ const AuditPage: React.FC = () => {
         {/* Footer */}
         <div className="px-6 py-3 border-t border-outline-variant/10 flex justify-between items-center">
           <p className="text-xs text-on-surface-variant">Showing {filtered.length} of {auditLogs.length} events</p>
-          <button className="text-xs font-bold text-primary hover:underline flex items-center gap-1">
+          <button onClick={handleExportCSV} className="text-xs font-bold text-primary hover:underline flex items-center gap-1">
             <span className="material-symbols-outlined text-sm">download</span>
             Export CSV
           </button>

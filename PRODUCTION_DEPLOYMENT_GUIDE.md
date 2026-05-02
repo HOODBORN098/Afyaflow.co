@@ -25,6 +25,7 @@ handleGenerateTicket()        // Generate unique queue tokens
 downloadTicket()              // Export ticket as file
 handleSave()                  // PUT /patients/{id}
 addNotification()             // 5-second auto-dismiss notifications
+fetchQueueStatus()            // 10-second real-time queue polling
 ```
 
 ---
@@ -145,12 +146,14 @@ PUT  /patients/{id}
 POST /appointments
 PUT  /appointments/{id}
 DELETE /appointments/{id}
+GET  /appointments/{id}/queue-status?doctorId={id}  # ✅ NEW: For real-time tracking
 
 # Doctor Endpoints  
 GET  /doctors
 PUT  /doctors/{id}
 DELETE /doctors/{id}
 POST /doctors/{id}/password
+PUT  /appointments/{id}/confirm  # ✅ NEW: For staff queue management
 
 # Department Endpoints
 GET /departments
@@ -241,13 +244,13 @@ java -jar target/demo-0.0.1-SNAPSHOT.jar
 - `GET /doctors` - List all doctors
 - `PUT /doctors/{id}` - Update doctor details
 - `DELETE /doctors/{id}` - Remove doctor
+- `GET /appointments/{id}/queue-status` - REAL-TIME queue position
+- `PUT /appointments/{id}/confirm` - Staff-triggered admission
 
 ### Requires Implementation ⏳
 - `POST /queue/generate` - Generate queue tickets
-- `POST /appointments` - Book new appointment
-- `GET /appointments/{id}/status` - Get appointment status
-- `POST /notifications` - Send notifications
-- `WebSocket /queue-updates` - Real-time queue updates
+- `WebSocket /queue-updates` - Optional: Replace polling with Sockets
+- `POST /notifications` - Push notifications for mobile
 
 ---
 

@@ -21,7 +21,9 @@ export type Appointment = {
   patientId: number;
   patientName: string;
   department: string;
+  departmentId?: number;
   doctor: string;
+  doctorId?: number;
   date: string;
   time: string;
   status: 'waiting' | 'called' | 'completed' | 'missed' | 'confirmed' | 'cancelled' | 'in-progress';
@@ -135,8 +137,20 @@ export type QueueApiResponse = {
   department?: { name: string };
 };
 
+export type QueueStats = {
+  userPosition: number;
+  totalInQueue: number;
+  estimatedWaitTime: number;
+  doctorStatus: string;
+  patientsAhead: number;
+};
+
 export function getQueueApi() {
   return apiRequest<QueueApiResponse[]>('/queue', { method: 'GET' });
+}
+
+export function getQueueStatusApi(appointmentId: number, doctorId: number) {
+  return apiRequest<QueueStats>(`/appointments/${appointmentId}/queue-status?doctorId=${doctorId}`, { method: 'GET' });
 }
 
 export function callQueueApi(queueId: number) {
@@ -162,7 +176,35 @@ export type AdminAnalytics = {
   totalAppointments: number;
   totalQueueItems: number;
 };
+export function cancelAppointmentApi(id: number) {
+  return apiRequest<void>(`/appointments/${id}/cancel`, { method: 'POST' });
+}
+
 export type AdminLogEntry = { message: string };
+export type Notification = {
+  id: number;
+  title: string;
+  message: string;
+  type: string;
+  isRead: boolean;
+  createdAt: string;
+};
+
+export function getNotificationsApi() {
+  return apiRequest<Notification[]>('/notifications', { method: 'GET' });
+}
+
+export function getUnreadCountApi() {
+  return apiRequest<number>('/notifications/unread-count', { method: 'GET' });
+}
+
+export function markAsReadApi(id: number) {
+  return apiRequest<void>(`/notifications/${id}/read`, { method: 'PATCH' });
+}
+
+export function markAllAsReadApi() {
+  return apiRequest<void>('/notifications/read-all', { method: 'POST' });
+}
 
 export function getDepartmentsApi() {
   return apiRequest<Department[]>('/departments', { method: 'GET' });
@@ -232,6 +274,10 @@ export function bookAppointmentApi(body: {
   });
 }
 
+export function getDoctorsApi(): Promise<Doctor[]> {
+  return apiRequest<Doctor[]>('/doctors', { method: 'GET' }, { includeAuth: false });
+}
+
 export function getDoctorsByDepartmentApi(departmentId: number): Promise<Doctor[]> {
-  return apiRequest<Doctor[]>(`/doctors?departmentId=${departmentId}`, { method: 'GET' }, { includeAuth: true });
+  return apiRequest<Doctor[]>(`/doctors?departmentId=${departmentId}`, { method: 'GET' }, { includeAuth: false });
 }

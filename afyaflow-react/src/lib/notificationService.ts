@@ -90,7 +90,8 @@ const appointmentCache: Map<number, number> = new Map(); // appointmentId -> tim
 export const startDoctorAppointmentMonitoring = (
   doctorId: number,
   onNewAppointment: (appointment: NewAppointment) => void,
-  pollingInterval: number = 3000
+  pollingInterval: number = 3000,
+  onUpdate?: (appointments: NewAppointment[]) => void
 ): (() => void) => {
   const pollerId = `doctor-${doctorId}`;
 
@@ -130,7 +131,24 @@ export const startDoctorAppointmentMonitoring = (
         return;
       }
 
-      const appointments: NewAppointment[] = await response.json();
+      const rawAppointments: any[] = await response.json();
+      
+      // Map backend fields to frontend interface
+      const appointments: NewAppointment[] = rawAppointments.map(a => ({
+        id: a.id,
+        patientName: a.patient?.name || `${a.patient?.firstName || ''} ${a.patient?.lastName || ''}`.trim() || 'Patient',
+        patientId: a.patient?.id,
+        department: a.departmentName,
+        appointmentTime: `${a.appointmentDate} ${a.appointmentTime}`,
+        reason: a.patient?.reason || 'Consultation',
+        status: a.status?.toLowerCase() || 'pending',
+        createdAt: a.appointmentDate
+      }));
+
+      // Trigger update callback with full list
+      if (onUpdate) {
+        onUpdate(appointments);
+      }
 
       // ========== CHECK FOR NEW APPOINTMENTS ==========
       // Compare with cache to find ones we haven't alerted about yet
@@ -145,7 +163,7 @@ export const startDoctorAppointmentMonitoring = (
         appointmentCache.set(appointment.id, Date.now());
 
         // Trigger callback for new appointment
-        onNewAppointment(appointment);
+        onNewAppointment(appointment, appointments);
       }
 
       // ========== CLEANUP OLD CACHE ENTRIES ==========

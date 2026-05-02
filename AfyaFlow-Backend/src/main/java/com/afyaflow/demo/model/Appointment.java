@@ -35,6 +35,8 @@ public class Appointment {
 
     private String status;
 
+    private String queueNumber;
+
     @ManyToOne
     private Patient patient;
 

@@ -4,6 +4,21 @@ import type { Patient, Priority } from '../../context/DataContext';
 import SignatureButton from '../ui/SignatureButton';
 import DashboardCard from '../ui/DashboardCard';
 import Input from '../ui/Input';
+import { z } from 'zod';
+import { toast } from 'sonner';
+
+/**
+ * ADMISSION SCHEMA
+ * Validates new patient records before registration.
+ */
+const admissionSchema = z.object({
+    name: z.string().min(3, "Patient name must be at least 3 characters"),
+    age: z.string().refine(v => !isNaN(parseInt(v)) && parseInt(v) > 0, "Age must be a positive number"),
+    phone: z.string().regex(/^\d{9,10}$/, "Phone must be 9 or 10 digits"),
+    nationalId: z.string().min(6, "ID must be at least 6 digits"),
+    reason: z.string().min(5, "Please provide a more detailed reason for visit"),
+    department: z.string().min(1, "Please select a department"),
+});
 
 interface Props {
     onClose: () => void;
@@ -32,10 +47,29 @@ const NewAdmissionModal: React.FC<Props> = ({ onClose, onSuccess }) => {
     });
     const [submitting, setSubmitting] = useState(false);
 
-    const set = (field: string, val: string) => setForm(f => ({ ...f, [field]: val }));
+    const set = (field: string, val: string) => {
+        setForm(f => {
+            const next = { ...f, [field]: val };
+            // If department changed, auto-select the first doctor in that department
+            if (field === 'department') {
+                const deptDoctors = doctors.filter(d => d.department?.name === val || d.specialization === val);
+                next.assignedDoctor = deptDoctors[0]?.name || '';
+            }
+            return next;
+        });
+    };
 
     const handleSubmit = async (e: React.FormEvent) => {
         e.preventDefault();
+
+        // Validate with Zod
+        const validation = admissionSchema.safeParse(form);
+        if (!validation.success) {
+            const firstError = validation.error.issues[0];
+            toast.error(firstError.message);
+            return;
+        }
+
         setSubmitting(true);
         // Simulate net delay for premium feel
         await new Promise(r => setTimeout(r, 800));
@@ -80,7 +114,7 @@ const NewAdmissionModal: React.FC<Props> = ({ onClose, onSuccess }) => {
                     </div>
 
                     {/* Body */}
-                    <form onSubmit={handleSubmit} className="flex-1 overflow-y-auto p-8 space-y-8">
+                    <form onSubmit={handleSubmit} className="flex-1 overflow-y-auto p-8 space-y-8 custom-scrollbar">
                         {/* Priority Selection */}
                         <div className="space-y-4">
                             <label className="text-[10px] font-extrabold text-on-surface-variant uppercase tracking-widest pl-1">Priority Level</label>
@@ -187,7 +221,10 @@ const NewAdmissionModal: React.FC<Props> = ({ onClose, onSuccess }) => {
                                     className="w-full px-4 py-4 bg-surface-container-highest rounded-xl text-sm font-bold text-on-surface focus:ring-2 focus:ring-primary/40 appearance-none outline-none transition-all"
                                 >
                                     <option value="">Auto-assign (Recommended)</option>
-                                    {doctors.map(d => <option key={d.id} value={d.name}>{d.name}</option>)}
+                                    {doctors
+                                        .filter(d => !form.department || d.department?.name === form.department || d.specialization === form.department)
+                                        .map(d => <option key={d.id} value={d.name}>{d.name}</option>)
+                                    }
                                 </select>
                             </div>
                         </div>

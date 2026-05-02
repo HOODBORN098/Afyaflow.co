@@ -38,9 +38,9 @@ const AssignBedModal: React.FC<AssignBedModalProps> = ({ patientId, patientName,
 
     return (
         <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm animate-in fade-in duration-300">
-            <div className="w-full max-w-lg animate-in zoom-in-95 duration-300">
-                <DashboardCard noPadding className="shadow-2xl border-outline-variant/20 bg-white overflow-hidden">
-                    <div className="px-8 py-6 border-b border-outline-variant/10 flex justify-between items-center bg-surface-container-lowest">
+            <div className="w-full max-w-lg max-h-[80vh] flex flex-col animate-in zoom-in-95 duration-300">
+                <DashboardCard noPadding className="shadow-2xl border-outline-variant/20 bg-white flex flex-col overflow-hidden">
+                    <div className="px-8 py-6 border-b border-outline-variant/10 flex justify-between items-center bg-surface-container-lowest shrink-0">
                         <div className="flex items-center gap-4">
                             <div className="w-12 h-12 rounded-full bg-secondary/10 flex items-center justify-center text-secondary">
                                 <span className="material-symbols-outlined text-2xl">bed</span>
@@ -55,7 +55,7 @@ const AssignBedModal: React.FC<AssignBedModalProps> = ({ patientId, patientName,
                         </button>
                     </div>
 
-                    <div className="p-8 space-y-6">
+                    <div className="p-8 space-y-6 overflow-y-auto flex-1 custom-scrollbar">
                         <div className="space-y-4">
                             <label className="text-[10px] font-extrabold text-on-surface-variant uppercase tracking-widest pl-1">Select Ward</label>
                             <div className="grid grid-cols-1 gap-3">
@@ -104,7 +104,7 @@ const AssignBedModal: React.FC<AssignBedModalProps> = ({ patientId, patientName,
                         )}
                     </div>
 
-                    <div className="px-8 py-6 border-t border-outline-variant/10 bg-surface-container-lowest flex justify-end gap-4">
+                    <div className="px-8 py-6 border-t border-outline-variant/10 bg-surface-container-lowest flex justify-end gap-4 shrink-0">
                         <SignatureButton variant="clear" onClick={onClose}>Cancel</SignatureButton>
                         <SignatureButton 
                             icon="check_circle" 

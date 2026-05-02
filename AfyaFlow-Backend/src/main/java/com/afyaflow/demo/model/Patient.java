@@ -64,6 +64,12 @@ public class Patient {
 
     private String consultationNotes;
 
+    private String vitalsJson;
+
+    private String prescriptionsJson;
+
+    private String referralsJson;
+
     @PrePersist
     protected void onCreate() {
         if (this.registeredAt == null) {

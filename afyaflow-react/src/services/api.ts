@@ -202,10 +202,19 @@ export const appointmentApi = {
 
 /**
  * AUDIT API: System audit logs and tracking
- * Used for compliance, security, and troubleshooting
  */
 export const auditApi = {
     getAll: () => api.get('/api/audit'),
+};
+
+/**
+ * NOTIFICATION API: User alerts and notifications
+ */
+export const notificationApi = {
+    getAll: () => api.get('/api/notifications'),
+    getUnreadCount: () => api.get('/api/notifications/unread-count'),
+    markAsRead: (id: number) => api.patch(`/api/notifications/${id}/read`),
+    markAllRead: () => api.post('/api/notifications/read-all'),
 };
 
 // ========== DEFAULT EXPORT ==========

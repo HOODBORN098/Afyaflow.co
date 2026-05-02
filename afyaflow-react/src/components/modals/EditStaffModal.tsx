@@ -153,7 +153,7 @@ const EditStaffModal: React.FC<EditStaffModalProps> = ({ doctor, onClose }) => {
 
   return (
     <div className="fixed inset-0 bg-black/50 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-      <div className="bg-white rounded-3xl w-full max-w-2xl max-h-[90vh] flex flex-col overflow-hidden shadow-2xl animate-in zoom-in-95 duration-200">
+      <div className="bg-white rounded-3xl w-full max-w-2xl max-h-[80vh] flex flex-col overflow-hidden shadow-2xl animate-in zoom-in-95 duration-200">
         <div className="bg-primary p-6 text-white shrink-0 flex justify-between items-center">
           <h2 className="text-xl font-bold">Edit Specialist Details</h2>
           <button onClick={onClose} className="hover:bg-white/20 p-2 rounded-full transition-colors">
@@ -162,7 +162,7 @@ const EditStaffModal: React.FC<EditStaffModalProps> = ({ doctor, onClose }) => {
         </div>
 
         <form onSubmit={handleSubmit} className="flex-1 flex flex-col min-h-0">
-          <div className="p-8 space-y-6 overflow-y-auto">
+          <div className="p-8 space-y-6 overflow-y-auto custom-scrollbar">
           <div className="grid grid-cols-2 gap-6">
             <div>
               <label className="block text-sm font-bold text-on-surface-variant mb-2">Full Name</label>

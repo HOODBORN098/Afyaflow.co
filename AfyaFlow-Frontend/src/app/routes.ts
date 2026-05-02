@@ -4,13 +4,10 @@ import { Login } from "./pages/Login";
 import { Register } from "./pages/Register";
 import { PatientDashboard } from "./pages/PatientDashboard";
 import { BookAppointment } from "./pages/BookAppointment";
-import { ReceptionistDashboard } from "./pages/ReceptionistDashboard";
-import { DoctorDashboard } from "./pages/DoctorDashboard";
-import { AdminDashboard } from "./pages/AdminDashboard";
-import { QueueManagement } from "./pages/QueueManagement";
 import { SetPassword } from "./pages/SetPassword";
 import { NotFound } from "./pages/NotFound";
 import { StaffRedirect } from "./components/StaffRedirect";
+import { DoctorsView } from "./pages/DoctorsView";
 
 export const router = createBrowserRouter([
   {
@@ -38,6 +35,10 @@ export const router = createBrowserRouter([
     Component: BookAppointment,
   },
   {
+    path: "/doctors",
+    Component: DoctorsView,
+  },
+  {
     path: "/receptionist",
     Component: StaffRedirect,
   },
@@ -51,7 +52,7 @@ export const router = createBrowserRouter([
   },
   {
     path: "/queue",
-    Component: QueueManagement,
+    Component: StaffRedirect,
   },
   {
     path: "*",

@@ -32,4 +32,7 @@ public class PatientDTO {
     private LocalDateTime servedAt;
     private String diagnosis;
     private String consultationNotes;
+    private String vitalsJson;
+    private String prescriptionsJson;
+    private String referralsJson;
 }

@@ -21,6 +21,7 @@ import AuditPage from './pages/AuditPage';
 import SettingsPage from './pages/SettingsPage';
 import ReportsPage from './pages/ReportsPage';
 import { useAuth } from './context/AuthContext';
+import { Toaster } from 'sonner';
 
 const DashboardRedirect = () => {
   const { user, loading } = useAuth();
@@ -52,6 +53,7 @@ const DashboardRedirect = () => {
 function App() {
   return (
     <NotificationProvider>
+        <Toaster position="top-right" richColors />
         <AuthProvider>
           <SearchProvider>
             <DataProvider>
