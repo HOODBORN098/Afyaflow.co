@@ -9,6 +9,7 @@ import jakarta.mail.MessagingException;
 import jakarta.mail.internet.MimeMessage;
 
 @Service
+@SuppressWarnings("null")
 public class EmailService {
 
     private final JavaMailSender mailSender;

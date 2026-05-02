@@ -8,6 +8,7 @@ import com.afyaflow.demo.model.Department;
 import com.afyaflow.demo.repository.DepartmentRepository;
 
 @Service
+@SuppressWarnings("null")
 public class DepartmentService {
 
     private final DepartmentRepository repository;

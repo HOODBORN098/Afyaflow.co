@@ -57,6 +57,7 @@ public class AuthController {
     }
 
     @PostMapping({"/register", "/signup"})
+    @SuppressWarnings("null")
     public ResponseEntity<?> register(@RequestBody RegisterRequest request) {
         if (userRepository.findByEmail(request.getEmail()).isPresent()) {
             Map<String, String> response = new HashMap<>();
@@ -172,6 +173,7 @@ public class AuthController {
     }
 
     @PostMapping("/set-password")
+    @SuppressWarnings("null")
     public ResponseEntity<?> setPassword(@RequestBody Map<String, String> request) {
         String email = request.get("email");
         String password = request.get("password");

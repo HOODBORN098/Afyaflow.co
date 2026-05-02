@@ -36,6 +36,7 @@ public class AppointmentService {
     }
 
     /** Legacy: used by the old afyaflow-react frontend */
+    @SuppressWarnings("null")
     public Appointment createAppointment(Appointment appointment) {
         return repository.save(appointment);
     }
@@ -113,6 +114,7 @@ public class AppointmentService {
      * Book an appointment for a patient identified by their email.
      * Creates and persists the appointment as CONFIRMED.
      */
+    @SuppressWarnings("null")
     public Appointment bookAppointment(String patientEmail, Long doctorId, Long departmentId, String dateStr, String time) {
         Patient patient = patientRepository.findByEmail(patientEmail)
             .orElseGet(() -> {

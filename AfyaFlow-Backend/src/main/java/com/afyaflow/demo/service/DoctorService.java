@@ -8,6 +8,7 @@ import com.afyaflow.demo.model.Doctor;
 import com.afyaflow.demo.repository.DoctorRepository;
 
 @Service
+@SuppressWarnings("null")
 public class DoctorService {
 
     private final DoctorRepository repository;
