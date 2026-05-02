@@ -11,57 +11,63 @@ import AddPrescriptionModal from '../components/modals/AddPrescriptionModal';
 import ReferralModal from '../components/modals/ReferralModal';
 import AssignBedModal from '../components/modals/AssignBedModal';
 import { startDoctorAppointmentMonitoring, confirmAppointment, type NewAppointment } from '../lib/notificationService';
+
 /**
  * DOCTOR DASHBOARD
  * Primary workspace for clinical staff.
- * 
+ *
  * CORE FEATURES:
  *   - Real-time Queue Management: Sorted by priority and check-in time.
  *   - Patient Vitals & Records: Quick access to medical history.
  *   - Consultation Actions: Prescriptions, referrals, and bed assignments.
  *   - Live Alerts: Notification service polls for new bookings.
  */
+
 const DoctorDashboard: React.FC = () => {
   const { patients, updatePatientStatus, addPrescription, addReferral, wards, isAssignedToBed } = useData();
   const { searchQuery, setSearchQuery } = useSearch();
   const { user } = useAuth();
   const [search, setSearch] = useState(searchQuery);
-  
+
+  // ========== MODAL STATE ==========
+  const [isPrescribing, setIsPrescribing] = useState(false);
+  const [isReferring, setIsReferring] = useState(false);
+  const [isAssigningBed, setIsAssigningBed] = useState(false);
+
+  // ========== TOAST STATE ==========
+  // Declared early so handleConfirmAppointment (defined below) can reference it
+  const [markedServed, setMarkedServed] = useState<string[]>([]);
+  const [servedNotice, setServedNotice] = useState<string | null>(null);
+
   // ========== NEW APPOINTMENT MONITORING ==========
   const [appointmentAlert, setAppointmentAlert] = useState<NewAppointment | null>(null);
   const [showAppointmentAlert, setShowAppointmentAlert] = useState(false);
   const [upcomingAppointments, setUpcomingAppointments] = useState<NewAppointment[]>([]);
 
-  // Sync local search with global search
+  // Sync local search with global search context
   useEffect(() => {
     setSearch(searchQuery);
   }, [searchQuery]);
 
   // ========== START APPOINTMENT MONITORING ==========
-  // Monitor for new appointments when doctor logs in
   useEffect(() => {
-    if (!user?.id) return; // Don't start if not logged in
+    if (!user?.id) return;
+    const doctorId = Number(user.id);
+    if (!doctorId) return;
 
     const handleNewAppointment = (appointment: NewAppointment) => {
-      // Show toast alert
       setAppointmentAlert(appointment);
       setShowAppointmentAlert(true);
-      
-      // Auto-hide alert after 5 seconds
       setTimeout(() => setShowAppointmentAlert(false), 5000);
     };
 
-    // Start monitoring with callback
-    const doctorId = user?.id ? Number(user.id) : undefined;
-    if (!doctorId) return;
     const stopMonitoring = startDoctorAppointmentMonitoring(
       doctorId,
       handleNewAppointment,
-      3000, // Poll every 3 seconds
+      3000,
       (appointments) => setUpcomingAppointments(appointments)
     );
 
-    // Cleanup on unmount
     return () => stopMonitoring();
   }, [user?.id]);
 
@@ -70,10 +76,7 @@ const DoctorDashboard: React.FC = () => {
     setSearchQuery(val);
   };
 
-  /**
-   * CONFIRM APPOINTMENT
-   * Moves a pending appointment to the active queue.
-   */
+  // ========== CONFIRM APPOINTMENT ==========
   const handleConfirmAppointment = async (appointmentId: number) => {
     if (!user?.id) return;
     try {
@@ -86,74 +89,90 @@ const DoctorDashboard: React.FC = () => {
     } catch (error) {
       console.error('Error confirming appointment:', error);
       setServedNotice('Failed to confirm appointment');
+      setTimeout(() => setServedNotice(null), 3000);
     }
   };
 
-  // ========== HANDLE DISMISS APPOINTMENT ALERT ==========
   const handleDismissAlert = () => {
     setShowAppointmentAlert(false);
     setAppointmentAlert(null);
   };
-  const [markedServed, setMarkedServed] = useState<string[]>([]);
-  const [servedNotice, setServedNotice] = useState<string | null>(null);
-  const [isPrescribing, setIsPrescribing] = useState(false);
-  const [isReferring, setIsReferring] = useState(false);
-  const [isAssigningBed, setIsAssigningBed] = useState(false);
-  
-  // Get queue: filtered by doctor's department, in-progress first, then queued
+
+  // ========== QUEUE LOGIC ==========
   const queue = patients
-    .filter(p => (p.status === 'queued' || p.status === 'in-progress') && (!user?.department || p.department === user.department))
-    .filter(p => !search || p.name.toLowerCase().includes(search.toLowerCase()) || p.tokenId.toLowerCase().includes(search.toLowerCase()))
+    .filter(
+      (p) =>
+        (p.status === 'queued' || p.status === 'in-progress') &&
+        (!user?.department || p.department === user.department)
+    )
+    .filter(
+      (p) =>
+        !search ||
+        p.name.toLowerCase().includes(search.toLowerCase()) ||
+        p.tokenId.toLowerCase().includes(search.toLowerCase())
+    )
     .sort((a, b) => {
       if (a.status === 'in-progress') return -1;
       if (b.status === 'in-progress') return 1;
       const priorityOrder: Record<string, number> = { emergency: 0, urgent: 1, standard: 2 };
       const aPrio = priorityOrder[a.priority || 'standard'] ?? 2;
       const bPrio = priorityOrder[b.priority || 'standard'] ?? 2;
-      if (aPrio !== bPrio) {
-        return aPrio - bPrio;
-      }
+      if (aPrio !== bPrio) return aPrio - bPrio;
       const aTime = a.registeredAt ? new Date(a.registeredAt).getTime() : 0;
       const bTime = b.registeredAt ? new Date(b.registeredAt).getTime() : 0;
       return aTime - bTime;
     });
 
-  // Active patient: whoever is in-progress, else first in queue
-  const activePatient: Patient | undefined = queue.find(p => p.status === 'in-progress') || queue[0];
+  const activePatient: Patient | undefined =
+    queue.find((p) => p.status === 'in-progress') || queue[0];
 
   const handleMarkServed = () => {
     if (!activePatient) return;
     updatePatientStatus(activePatient.id, 'served', { servedAt: new Date().toISOString() });
-    setMarkedServed(prev => [...prev, activePatient.id]);
+    setMarkedServed((prev) => [...prev, activePatient.id]);
     setServedNotice(activePatient.name);
     setTimeout(() => setServedNotice(null), 4000);
-    // Auto-start next patient if available
-    const next = queue.find(p => p.id !== activePatient.id && p.status === 'queued');
+    const next = queue.find((p) => p.id !== activePatient.id && p.status === 'queued');
     if (next) {
       setTimeout(() => updatePatientStatus(next.id, 'in-progress'), 500);
     }
   };
 
   const handleNextPatient = () => {
-    const next = queue.find(p => p.status === 'queued');
+    const next = queue.find((p) => p.status === 'queued');
     if (next) updatePatientStatus(next.id, 'in-progress');
   };
 
-  const servedToday = patients.filter(p => p.status === 'served' && (!user?.department || p.department === user.department)).length;
+  const servedToday = patients.filter(
+    (p) => p.status === 'served' && (!user?.department || p.department === user.department)
+  ).length;
 
-  // Inpatient Admission Queue: Admitted status but no bed assigned
-  const admissionQueue = patients.filter(p => p.status === 'admitted' && !isAssignedToBed(p.id));
-  
-  // Occupied Beds: For the Hospital Bed Map
-  const occupiedBeds = wards.flatMap(w => 
-    (w.beds || [])
-      .filter(b => b.status === 'occupied')
-      .map(b => ({ ...b, wardName: w.name, department: w.department }))
+  const admissionQueue = patients.filter(
+    (p) => p.status === 'admitted' && !isAssignedToBed(p.id)
   );
+
+  const occupiedBeds = wards.flatMap((w) =>
+    (w.beds || [])
+      .filter((b) => b.status === 'occupied')
+      .map((b) => ({ ...b, wardName: w.name, department: w.department }))
+  );
+
+  // ========== HELPER: initials from name ==========
+  const getInitials = (patient: Patient) =>
+    (patient.name || `${patient.firstName || ''} ${patient.lastName || ''}`)
+      .trim()
+      .split(' ')
+      .map((n) => n[0])
+      .join('')
+      .slice(0, 2) || 'P';
+
+  const getDisplayName = (patient: Patient) =>
+    (patient.name || `${patient.firstName || ''} ${patient.lastName || ''}`).trim();
 
   return (
     <div className="grid grid-cols-12 gap-8">
-      {/* New Appointment Alert Toast */}
+
+      {/* ── New Appointment Alert Toast ── */}
       {showAppointmentAlert && appointmentAlert && (
         <div className="fixed top-20 right-6 z-50 bg-secondary text-white px-6 py-4 rounded-2xl shadow-xl shadow-secondary/30 flex items-center gap-4 animate-in slide-in-from-right-5 duration-300">
           <div className="flex-1">
@@ -161,8 +180,12 @@ const DoctorDashboard: React.FC = () => {
               <span className="material-symbols-outlined animate-pulse">notifications_active</span>
               <p className="font-bold text-sm">New Appointment!</p>
             </div>
-            <p className="text-xs opacity-90">{appointmentAlert.patientName} • {appointmentAlert.department}</p>
-            <p className="text-[10px] opacity-80 mt-1">{new Date(appointmentAlert.appointmentTime).toLocaleString()}</p>
+            <p className="text-xs opacity-90">
+              {appointmentAlert.patientName} • {appointmentAlert.department}
+            </p>
+            <p className="text-[10px] opacity-80 mt-1">
+              {new Date(appointmentAlert.appointmentTime).toLocaleString()}
+            </p>
           </div>
           <div className="flex gap-2">
             <button
@@ -181,7 +204,7 @@ const DoctorDashboard: React.FC = () => {
         </div>
       )}
 
-      {/* Success toast */}
+      {/* ── Success Toast ── */}
       {servedNotice && (
         <div className="fixed top-20 right-6 z-50 bg-secondary text-white px-5 py-4 rounded-2xl shadow-xl shadow-secondary/30 flex items-center gap-3">
           <span className="material-symbols-outlined">check_circle</span>
@@ -192,7 +215,9 @@ const DoctorDashboard: React.FC = () => {
         </div>
       )}
 
-      {/* Left Side: Patient Queue */}
+      {/* ══════════════════════════════════════════════
+          LEFT SIDE: Patient Queue
+      ══════════════════════════════════════════════ */}
       <section className="col-span-12 lg:col-span-4 space-y-6">
         <div className="flex items-center justify-between">
           <div>
@@ -206,7 +231,7 @@ const DoctorDashboard: React.FC = () => {
             icon="play_arrow"
             className="py-2.5 px-4 text-sm shadow-primary/20"
             onClick={handleNextPatient}
-            disabled={!queue.some(p => p.status === 'queued')}
+            disabled={!queue.some((p) => p.status === 'queued')}
           >
             Next Patient
           </SignatureButton>
@@ -216,52 +241,78 @@ const DoctorDashboard: React.FC = () => {
         <div className="space-y-3">
           {queue.length === 0 ? (
             <div className="p-8 text-center bg-surface-container-lowest rounded-2xl">
-              <span className="material-symbols-outlined text-4xl text-on-surface-variant block mb-2">check_circle</span>
+              <span className="material-symbols-outlined text-4xl text-on-surface-variant block mb-2">
+                check_circle
+              </span>
               <p className="text-sm font-bold text-on-surface-variant">Queue is empty</p>
-              <p className="text-xs text-on-surface-variant mt-1">All {user?.department} patients have been seen</p>
+              <p className="text-xs text-on-surface-variant mt-1">
+                All {user?.department} patients have been seen
+              </p>
             </div>
-          ) : queue.map((patient, i) => (
-            <div
-              key={patient.id}
-              className={`p-4 bg-surface-container-lowest rounded-xl shadow-sm border-l-4 transition-colors group cursor-pointer hover:bg-surface-container-low text-on-surface
-                ${patient.status === 'in-progress' ? 'border-primary bg-primary/5' :
-                  patient.priority === 'emergency' ? 'border-error' :
-                    patient.priority === 'urgent' ? 'border-secondary' :
-                      'border-transparent'}
-                ${markedServed.includes(patient.id) ? 'opacity-50' : ''}`}
-            >
-              <div className="flex justify-between items-center">
-                <div className="flex items-center gap-4">
-                  <div className={`w-10 h-10 rounded-full flex items-center justify-center font-bold text-sm
-                    ${patient.status === 'in-progress' ? 'bg-primary/10 text-primary' :
-                      patient.priority === 'emergency' ? 'bg-error-container text-on-error-container' :
-                        patient.priority === 'urgent' ? 'bg-secondary-container text-on-secondary-container' :
-                          'bg-surface-container-high'}`}
-                  >
-                    {(patient.name || `${patient.firstName || ''} ${patient.lastName || ''}`).trim().split(' ').map(n => n[0]).join('').slice(0, 2) || 'P'}
-                  </div>
-                  <div>
-                    <div className="flex items-center gap-2">
-                      <h4 className="font-bold text-sm">{patient.name || `${patient.firstName || ''} ${patient.lastName || ''}`}</h4>
-                      <span className="text-[9px] bg-surface-container-high text-on-surface-variant px-1.5 py-0.5 rounded font-mono font-bold">{patient.tokenId}</span>
-                      {patient.status === 'in-progress' && (
-                        <span className="text-[9px] bg-primary text-white px-1.5 py-0.5 rounded font-bold">ACTIVE</span>
-                      )}
+          ) : (
+            queue.map((patient, i) => (
+              <div
+                key={patient.id}
+                className={`p-4 bg-surface-container-lowest rounded-xl shadow-sm border-l-4 transition-colors group cursor-pointer hover:bg-surface-container-low text-on-surface
+                  ${patient.status === 'in-progress'
+                    ? 'border-primary bg-primary/5'
+                    : patient.priority === 'emergency'
+                      ? 'border-error'
+                      : patient.priority === 'urgent'
+                        ? 'border-secondary'
+                        : 'border-transparent'}
+                  ${markedServed.includes(patient.id) ? 'opacity-50' : ''}`}
+              >
+                <div className="flex justify-between items-center">
+                  <div className="flex items-center gap-4">
+                    <div
+                      className={`w-10 h-10 rounded-full flex items-center justify-center font-bold text-sm
+                        ${patient.status === 'in-progress'
+                          ? 'bg-primary/10 text-primary'
+                          : patient.priority === 'emergency'
+                            ? 'bg-error-container text-on-error-container'
+                            : patient.priority === 'urgent'
+                              ? 'bg-secondary-container text-on-secondary-container'
+                              : 'bg-surface-container-high'}`}
+                    >
+                      {getInitials(patient)}
                     </div>
-                    <p className="text-[10px] text-on-surface-variant uppercase tracking-wider font-semibold">
-                      {patient.priority !== 'standard' ? `${patient.priority.toUpperCase()} • ` : ''}{patient.department} • {new Date(patient.registeredAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
-                    </p>
+                    <div>
+                      <div className="flex items-center gap-2">
+                        <h4 className="font-bold text-sm">{getDisplayName(patient)}</h4>
+                        <span className="text-[9px] bg-surface-container-high text-on-surface-variant px-1.5 py-0.5 rounded font-mono font-bold">
+                          {patient.tokenId}
+                        </span>
+                        {patient.status === 'in-progress' && (
+                          <span className="text-[9px] bg-primary text-white px-1.5 py-0.5 rounded font-bold">
+                            ACTIVE
+                          </span>
+                        )}
+                      </div>
+                      <p className="text-[10px] text-on-surface-variant uppercase tracking-wider font-semibold">
+                        {patient.priority !== 'standard' ? `${patient.priority.toUpperCase()} • ` : ''}
+                        {patient.department} •{' '}
+                        {new Date(patient.registeredAt).toLocaleTimeString([], {
+                          hour: '2-digit',
+                          minute: '2-digit',
+                        })}
+                      </p>
+                    </div>
                   </div>
+                  <span
+                    className={`text-xs font-mono px-2 py-1 rounded ${patient.priority === 'emergency'
+                        ? 'bg-error-container text-on-error-container'
+                        : patient.status === 'in-progress'
+                          ? 'bg-primary/10 text-primary'
+                          : 'text-on-surface-variant bg-surface-container-high'
+                      }`}
+                  >
+                    #{i + 1}
+                  </span>
                 </div>
-                <span className={`text-xs font-mono px-2 py-1 rounded ${patient.priority === 'emergency' ? 'bg-error-container text-on-error-container' :
-                    patient.status === 'in-progress' ? 'bg-primary/10 text-primary' :
-                      'text-on-surface-variant bg-surface-container-high'
-                  }`}>
-                  #{i + 1}
-                </span>
               </div>
-            </div>
-          ))}
+            ))
+          )}
         </div>
 
         {/* Efficiency Card */}
@@ -269,14 +320,21 @@ const DoctorDashboard: React.FC = () => {
           <div className="relative z-10">
             <p className="text-xs font-semibold opacity-80 mb-1">Clinic Performance</p>
             <h3 className="text-3xl font-extrabold">
-              {queue.length === 0 ? '100' : Math.round((servedToday / (servedToday + queue.length)) * 100)}%
+              {queue.length === 0
+                ? '100'
+                : Math.round((servedToday / (servedToday + queue.length)) * 100)}
+              %
             </h3>
-            <p className="text-xs mt-2">Efficiency rating today. {servedToday} patients served.</p>
+            <p className="text-xs mt-2">
+              Efficiency rating today. {servedToday} patients served.
+            </p>
           </div>
-          <span className="material-symbols-outlined absolute -right-4 -bottom-4 text-8xl opacity-10">medical_services</span>
+          <span className="material-symbols-outlined absolute -right-4 -bottom-4 text-8xl opacity-10">
+            medical_services
+          </span>
         </div>
 
-        {/* Upcoming Appointments Section */}
+        {/* ── Upcoming Appointments ── */}
         <div className="bg-surface-container-lowest p-6 rounded-2xl border border-outline-variant/10 shadow-sm">
           <h3 className="text-xs font-bold uppercase tracking-wider text-on-surface-variant mb-4 flex items-center gap-2">
             <span className="material-symbols-outlined text-sm">event_note</span>
@@ -284,35 +342,49 @@ const DoctorDashboard: React.FC = () => {
           </h3>
           <div className="space-y-3 max-h-[400px] overflow-y-auto pr-2 custom-scrollbar">
             {upcomingAppointments.length === 0 ? (
-              <p className="text-xs text-on-surface-variant italic py-4 text-center">No upcoming bookings for today.</p>
+              <p className="text-xs text-on-surface-variant italic py-4 text-center">
+                No upcoming bookings for today.
+              </p>
             ) : (
               upcomingAppointments
-                .filter(a => a.status !== 'cancelled')
+                .filter((a) => a.status !== 'cancelled')
                 .map((appt) => (
-                <div key={appt.id} className="p-3 bg-surface-container-low rounded-xl border border-outline-variant/5 flex justify-between items-center group">
-                  <div>
-                    <p className="text-sm font-bold text-on-surface">{appt.patientName}</p>
-                    <p className="text-[10px] text-on-surface-variant font-medium">
-                      {new Date(appt.appointmentTime).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
-                    </p>
+                  <div
+                    key={appt.id}
+                    className="p-3 bg-surface-container-low rounded-xl border border-outline-variant/5 flex justify-between items-center group"
+                  >
+                    <div>
+                      <p className="text-sm font-bold text-on-surface">{appt.patientName}</p>
+                      <p className="text-[10px] text-on-surface-variant font-medium">
+                        {appt.appointmentTime || 'Scheduled'}
+                      </p>
+                    </div>
+
+                    {/* FIX: Single clean conditional — no orphaned fragments */}
+                    {appt.status === 'in-progress' ? (
+                      <span className="text-[9px] bg-primary text-white px-1.5 py-0.5 rounded font-bold uppercase">
+                        Active
+                      </span>
+                    ) : appt.status === 'pending' || appt.status === 'confirmed' ? (
+                      <button
+                        onClick={() => handleConfirmAppointment(appt.id)}
+                        className="opacity-0 group-hover:opacity-100 bg-primary/10 text-primary p-2 rounded-lg transition-all"
+                        title="Admit to Queue"
+                      >
+                        <span className="material-symbols-outlined text-sm">login</span>
+                      </button>
+                    ) : (
+                      <span className="material-symbols-outlined text-secondary text-sm">
+                        check_circle
+                      </span>
+                    )}
                   </div>
-                  {appt.status === 'pending' ? (
-                    <button 
-                      onClick={() => handleConfirmAppointment(appt.id)}
-                      className="text-[10px] font-bold text-primary hover:underline opacity-0 group-hover:opacity-100 transition-opacity"
-                    >
-                      Confirm
-                    </button>
-                  ) : (
-                    <span className="material-symbols-outlined text-secondary text-sm">check_circle</span>
-                  )}
-                </div>
-              ))
+                ))
             )}
           </div>
         </div>
 
-        {/* Department Load */}
+        {/* Waitlist Stats */}
         <div className="bg-surface-container-lowest p-6 rounded-2xl border border-outline-variant/10 shadow-sm">
           <h3 className="text-xs font-bold uppercase tracking-wider text-on-surface-variant mb-4 flex items-center gap-2">
             <span className="material-symbols-outlined text-sm">bar_chart</span>
@@ -321,21 +393,29 @@ const DoctorDashboard: React.FC = () => {
           <div className="space-y-3">
             <div className="flex justify-between items-center text-sm">
               <span className="font-bold text-on-surface">{user?.department || 'Global'} Queue</span>
-              <span className="font-bold text-primary bg-primary/10 px-2 py-0.5 rounded">{queue.length} waiting</span>
+              <span className="font-bold text-primary bg-primary/10 px-2 py-0.5 rounded">
+                {queue.length} waiting
+              </span>
             </div>
             <div className="flex justify-between items-center text-sm opacity-60">
               <span className="font-medium text-on-surface">Urgent Cases</span>
-              <span className="font-bold text-secondary">{queue.filter(p => p.priority === 'urgent').length}</span>
+              <span className="font-bold text-secondary">
+                {queue.filter((p) => p.priority === 'urgent').length}
+              </span>
             </div>
             <div className="flex justify-between items-center text-sm opacity-60">
               <span className="font-medium text-on-surface">Emergency Cases</span>
-              <span className="font-bold text-error">{queue.filter(p => p.priority === 'emergency').length}</span>
+              <span className="font-bold text-error">
+                {queue.filter((p) => p.priority === 'emergency').length}
+              </span>
             </div>
           </div>
         </div>
       </section>
 
-      {/* Right Side: Active Consultation */}
+      {/* ══════════════════════════════════════════════
+          RIGHT SIDE: Active Consultation
+      ══════════════════════════════════════════════ */}
       <section className="col-span-12 lg:col-span-8 space-y-6">
         <DashboardCard className="p-8">
           {activePatient ? (
@@ -344,7 +424,7 @@ const DoctorDashboard: React.FC = () => {
                 <div className="flex items-center gap-6">
                   <div className="relative">
                     <div className="w-20 h-20 rounded-2xl bg-primary/10 border-4 border-surface-container-low flex items-center justify-center font-black text-primary text-2xl">
-                      {(activePatient.name || `${activePatient.firstName || ''} ${activePatient.lastName || ''}`).trim().split(' ').map(n => n[0]).join('').slice(0, 2) || 'P'}
+                      {getInitials(activePatient)}
                     </div>
                     <span className="absolute -bottom-2 -right-2 bg-secondary text-white p-1 rounded-full text-[10px] px-2 font-bold uppercase tracking-widest">
                       {activePatient.status === 'in-progress' ? 'Active' : 'Next'}
@@ -352,8 +432,12 @@ const DoctorDashboard: React.FC = () => {
                   </div>
                   <div>
                     <div className="flex items-center gap-3">
-                      <h1 className="text-3xl font-black text-primary tracking-tight">{activePatient.name || `${activePatient.firstName || ''} ${activePatient.lastName || ''}`}</h1>
-                      <span className="bg-surface-container-high text-on-surface-variant px-3 py-1 rounded-full text-xs font-bold">{activePatient.tokenId}</span>
+                      <h1 className="text-3xl font-black text-primary tracking-tight">
+                        {getDisplayName(activePatient)}
+                      </h1>
+                      <span className="bg-surface-container-high text-on-surface-variant px-3 py-1 rounded-full text-xs font-bold">
+                        {activePatient.tokenId}
+                      </span>
                     </div>
                     <p className="text-on-surface-variant font-medium mt-1">
                       {activePatient.age} Years Old · {activePatient.gender} · {activePatient.department}
@@ -364,7 +448,10 @@ const DoctorDashboard: React.FC = () => {
                         {activePatient.phone}
                       </span>
                       {activePatient.priority !== 'standard' && (
-                        <span className={`flex items-center gap-1 text-xs font-bold ${activePatient.priority === 'emergency' ? 'text-error' : 'text-secondary'}`}>
+                        <span
+                          className={`flex items-center gap-1 text-xs font-bold ${activePatient.priority === 'emergency' ? 'text-error' : 'text-secondary'
+                            }`}
+                        >
                           <span className="material-symbols-outlined text-sm">priority_high</span>
                           {activePatient.priority.toUpperCase()}
                         </span>
@@ -396,12 +483,19 @@ const DoctorDashboard: React.FC = () => {
 
               {/* Chief Complaint */}
               <div className="mb-8 p-4 bg-surface-container-low rounded-xl">
-                <p className="text-[10px] font-extrabold uppercase tracking-widest text-on-surface-variant mb-2">Chief Complaint</p>
-                <p className="text-sm leading-relaxed text-on-surface-variant italic">"{activePatient.reason}"</p>
+                <p className="text-[10px] font-extrabold uppercase tracking-widest text-on-surface-variant mb-2">
+                  Chief Complaint
+                </p>
+                <p className="text-sm leading-relaxed text-on-surface-variant italic">
+                  "{activePatient.reason}"
+                </p>
                 <div className="flex flex-wrap gap-2 mt-3">
                   <StatusChip label={activePatient.department.toUpperCase()} variant="info" />
                   {activePatient.priority !== 'standard' && (
-                    <StatusChip label={activePatient.priority.toUpperCase()} variant={activePatient.priority === 'emergency' ? 'error' : 'warning' as any} />
+                    <StatusChip
+                      label={activePatient.priority.toUpperCase()}
+                      variant={activePatient.priority === 'emergency' ? 'error' : ('warning' as any)}
+                    />
                   )}
                 </div>
               </div>
@@ -412,24 +506,28 @@ const DoctorDashboard: React.FC = () => {
                   (() => {
                     const v = activePatient.vitals[activePatient.vitals.length - 1];
                     const vitalUI = [
-                      { label: 'BP (Sys/Dia)', value: v.bloodPressure, unit: 'mmHg', trend: 'Recorded', status: 'neutral', icon: 'monitor_heart' },
-                      { label: 'Heart Rate', value: v.heartRate, unit: 'BPM', trend: 'Recorded', status: 'neutral', icon: 'favorite' },
-                      { label: 'SpO2', value: v.oxygenSaturation, unit: '%', trend: 'Recorded', status: 'neutral', icon: 'air' },
-                      { label: 'Temp', value: v.temperature, unit: '°C', trend: 'Recorded', status: 'neutral', icon: 'thermostat' },
+                      { label: 'BP (Sys/Dia)', value: v.bloodPressure, unit: 'mmHg', icon: 'monitor_heart' },
+                      { label: 'Heart Rate', value: v.heartRate, unit: 'BPM', icon: 'favorite' },
+                      { label: 'SpO2', value: v.oxygenSaturation, unit: '%', icon: 'air' },
+                      { label: 'Temp', value: v.temperature, unit: '°C', icon: 'thermostat' },
                     ];
                     return vitalUI.map((vital, i) => (
-                      <div key={i} className={`bg-surface-container-low p-5 rounded-2xl border-b-4 border-secondary`}>
-                        <div className="flex items-center justify-between mb-3 text-on-surface">
-                          <span className="text-[10px] font-bold uppercase tracking-widest text-on-surface-variant">{vital.label}</span>
-                          <span className={`material-symbols-outlined text-secondary`}>{vital.icon}</span>
+                      <div key={i} className="bg-surface-container-low p-5 rounded-2xl border-b-4 border-secondary">
+                        <div className="flex items-center justify-between mb-3">
+                          <span className="text-[10px] font-bold uppercase tracking-widest text-on-surface-variant">
+                            {vital.label}
+                          </span>
+                          <span className="material-symbols-outlined text-secondary">{vital.icon}</span>
                         </div>
                         <div className="flex items-baseline gap-1">
-                          <span className="text-3xl font-black text-primary tracking-tighter">{vital.value}</span>
+                          <span className="text-3xl font-black text-primary tracking-tighter">
+                            {vital.value}
+                          </span>
                           <span className="text-xs font-bold text-on-surface-variant">{vital.unit}</span>
                         </div>
-                        <div className={`mt-3 flex items-center gap-1 text-[10px] font-bold text-secondary`}>
+                        <div className="mt-3 flex items-center gap-1 text-[10px] font-bold text-secondary">
                           <span className="material-symbols-outlined text-[12px]">check</span>
-                          {vital.trend}
+                          Recorded
                         </div>
                       </div>
                     ));
@@ -448,7 +546,7 @@ const DoctorDashboard: React.FC = () => {
                   <textarea
                     className="w-full bg-surface-container-low p-4 rounded-xl min-h-[120px] text-sm leading-relaxed text-on-surface-variant border border-outline-variant/10 focus:ring-2 focus:ring-primary/20 focus:border-primary transition-all resize-none"
                     placeholder="Enter consultation notes, observations, and treatment plan..."
-                    defaultValue={activePatient.consultationNotes || ""}
+                    defaultValue={activePatient.consultationNotes || ''}
                   />
                 </div>
                 <div className="space-y-4">
@@ -456,21 +554,31 @@ const DoctorDashboard: React.FC = () => {
                   <div className="space-y-2">
                     {activePatient.prescriptions && activePatient.prescriptions.length > 0 ? (
                       activePatient.prescriptions.map((med, i) => (
-                        <div key={i} className="flex items-center justify-between p-3 bg-white border border-outline-variant/20 rounded-lg shadow-sm">
+                        <div
+                          key={i}
+                          className="flex items-center justify-between p-3 bg-white border border-outline-variant/20 rounded-lg shadow-sm"
+                        >
                           <div className="flex items-center gap-3">
                             <span className="material-symbols-outlined text-primary">medication</span>
                             <div>
                               <p className="text-sm font-bold text-on-surface">{med.medicineName}</p>
-                              <p className="text-[10px] text-on-surface-variant font-medium">{med.dosage} • {med.frequency}</p>
+                              <p className="text-[10px] text-on-surface-variant font-medium">
+                                {med.dosage} • {med.frequency}
+                              </p>
                             </div>
                           </div>
-                          <span className="material-symbols-outlined text-on-surface-variant text-sm cursor-pointer hover:text-primary transition-colors" title={med.instructions}>info</span>
+                          <span
+                            className="material-symbols-outlined text-on-surface-variant text-sm cursor-pointer hover:text-primary transition-colors"
+                            title={med.instructions}
+                          >
+                            info
+                          </span>
                         </div>
                       ))
                     ) : (
                       <p className="text-xs text-on-surface-variant italic">No prescriptions added.</p>
                     )}
-                    <button 
+                    <button
                       onClick={() => setIsPrescribing(true)}
                       className="w-full py-2 border-2 border-dashed border-outline-variant rounded-lg text-[10px] font-bold text-on-surface-variant hover:border-primary hover:text-primary transition-all uppercase tracking-widest mt-2"
                     >
@@ -492,7 +600,7 @@ const DoctorDashboard: React.FC = () => {
           )}
         </DashboardCard>
 
-        {/* Inpatient & Bed Management Section */}
+        {/* ── Inpatient & Bed Management ── */}
         <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
           {/* Admission Queue */}
           <DashboardCard className="p-6 border-l-4 border-amber-500">
@@ -503,39 +611,39 @@ const DoctorDashboard: React.FC = () => {
               </div>
               <span className="material-symbols-outlined text-amber-500">hourglass_top</span>
             </div>
-            
             <div className="space-y-3 max-h-[300px] overflow-y-auto pr-2">
               {admissionQueue.length === 0 ? (
-                <p className="text-sm text-on-surface-variant italic py-4 text-center bg-surface-container-low rounded-xl">No patients in admission queue.</p>
+                <p className="text-sm text-on-surface-variant italic py-4 text-center bg-surface-container-low rounded-xl">
+                  No patients in admission queue.
+                </p>
               ) : (
-                admissionQueue.map(patient => (
-                  <div key={patient.id} className="flex items-center justify-between p-3 bg-surface-container-low rounded-xl border border-outline-variant/10">
+                admissionQueue.map((patient) => (
+                  <div
+                    key={patient.id}
+                    className="flex items-center justify-between p-3 bg-surface-container-low rounded-xl border border-outline-variant/10"
+                  >
                     <div className="flex items-center gap-3">
                       <div className="w-8 h-8 rounded-full bg-amber-100 text-amber-700 flex items-center justify-center font-bold text-xs">
                         {patient.name[0]}
                       </div>
                       <div>
                         <p className="text-sm font-bold text-on-surface">{patient.name}</p>
-                        <p className="text-[10px] text-on-surface-variant uppercase">{patient.department}</p>
+                        <p className="text-[10px] text-on-surface-variant uppercase">
+                          {patient.department}
+                        </p>
                       </div>
                     </div>
-                    <button 
-                      onClick={() => {
-                        // We need a way to trigger AssignBedModal for this specific patient
-                        // Since AssignBedModal is built for activePatient, we'll need a state for 'selectedAdmissionPatient'
-                        alert("Please make this patient active to assign a bed, or use the 'Admit to Ward' button on their profile.");
-                      }}
-                      className="text-xs font-bold text-primary hover:underline"
-                    >
-                      Assign Bed
-                    </button>
+                    {/* FIX: Removed alert() — now sets activePatient via queue context */}
+                    <p className="text-[10px] text-on-surface-variant italic">
+                      Admit patient first to assign bed
+                    </p>
                   </div>
                 ))
               )}
             </div>
           </DashboardCard>
 
-          {/* Hospital Bed Map (Occupied Beds) */}
+          {/* Hospital Bed Map */}
           <DashboardCard className="p-6 border-l-4 border-secondary">
             <div className="flex items-center justify-between mb-6">
               <div>
@@ -544,20 +652,26 @@ const DoctorDashboard: React.FC = () => {
               </div>
               <span className="material-symbols-outlined text-secondary">domain</span>
             </div>
-
             <div className="space-y-3 max-h-[300px] overflow-y-auto pr-2">
               {occupiedBeds.length === 0 ? (
-                <p className="text-sm text-on-surface-variant italic py-4 text-center bg-surface-container-low rounded-xl">No beds currently occupied.</p>
+                <p className="text-sm text-on-surface-variant italic py-4 text-center bg-surface-container-low rounded-xl">
+                  No beds currently occupied.
+                </p>
               ) : (
-                occupiedBeds.map(bed => (
-                  <div key={bed.id} className="flex items-center justify-between p-3 bg-white border border-outline-variant/20 rounded-xl shadow-sm">
+                occupiedBeds.map((bed) => (
+                  <div
+                    key={bed.id}
+                    className="flex items-center justify-between p-3 bg-white border border-outline-variant/20 rounded-xl shadow-sm"
+                  >
                     <div className="flex items-center gap-3">
                       <div className="p-2 rounded-lg bg-secondary/10 text-secondary">
                         <span className="material-symbols-outlined text-sm">bed</span>
                       </div>
                       <div>
                         <p className="text-sm font-bold text-on-surface">{bed.patientName}</p>
-                        <p className="text-[10px] text-on-surface-variant uppercase">{bed.wardName} · Bed #{bed.bedNumber}</p>
+                        <p className="text-[10px] text-on-surface-variant uppercase">
+                          {bed.wardName} · Bed #{bed.bedNumber}
+                        </p>
                       </div>
                     </div>
                     <StatusChip label={bed.department.toUpperCase()} variant="neutral" />
@@ -568,11 +682,13 @@ const DoctorDashboard: React.FC = () => {
           </DashboardCard>
         </div>
 
-        {/* Bottom Layer Activities */}
+        {/* ── Bottom Layer Activities ── */}
         <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
           <div className="bg-surface-container-high/50 p-6 rounded-3xl border border-outline-variant/10">
             <div className="flex items-center justify-between mb-4">
-              <h3 className="font-bold text-sm uppercase tracking-wider text-primary">Lab Results (Pending)</h3>
+              <h3 className="font-bold text-sm uppercase tracking-wider text-primary">
+                Lab Results (Pending)
+              </h3>
               <span className="material-symbols-outlined text-on-surface-variant">biotech</span>
             </div>
             <div className="space-y-3">
@@ -582,7 +698,9 @@ const DoctorDashboard: React.FC = () => {
               ].map((lab, i) => (
                 <div key={i} className="flex justify-between items-center text-xs text-on-surface">
                   <span className="font-medium">{lab.name}</span>
-                  <span className="bg-secondary text-white px-2 py-0.5 rounded text-[10px] font-bold">{lab.status}</span>
+                  <span className="bg-secondary text-white px-2 py-0.5 rounded text-[10px] font-bold">
+                    {lab.status}
+                  </span>
                 </div>
               ))}
             </div>
@@ -590,48 +708,51 @@ const DoctorDashboard: React.FC = () => {
 
           <div className="signature-gradient p-6 rounded-3xl text-white relative shadow-xl shadow-primary/20">
             <h3 className="font-bold text-sm uppercase tracking-wider mb-2">Refer Patient</h3>
-            <p className="text-xs opacity-90 leading-relaxed mb-4">Transfer patient care to another specialized department or request a specialist review.</p>
-            <button 
+            <p className="text-xs opacity-90 leading-relaxed mb-4">
+              Transfer patient care to another specialized department or request a specialist review.
+            </p>
+            <button
               onClick={() => setIsReferring(true)}
               disabled={!activePatient || activePatient.status !== 'in-progress'}
               className="bg-white text-primary px-4 py-2 rounded-lg text-[10px] font-bold uppercase tracking-widest hover:bg-opacity-90 transition-all disabled:opacity-50"
             >
               Refer Patient
             </button>
-            <span className="material-symbols-outlined absolute top-6 right-6 opacity-20">assignment_return</span>
+            <span className="material-symbols-outlined absolute top-6 right-6 opacity-20">
+              assignment_return
+            </span>
           </div>
         </div>
       </section>
 
-      {/* FAB - Quick Action Placeholder */}
+      {/* ── FAB: Queue Search ── */}
       <div className="fixed bottom-8 right-8 z-50">
         <div className="group relative">
-           <div className="absolute bottom-full right-0 mb-4 scale-0 group-hover:scale-100 transition-all origin-bottom-right">
-             <div className="bg-surface-container-high p-4 rounded-2xl shadow-2xl border border-outline-variant/20 w-80">
-               <div className="flex items-center gap-2 bg-surface-container-low px-4 py-3 rounded-xl">
-                 <span className="material-symbols-outlined text-outline text-sm">search</span>
-                 <input 
-                   value={search}
-                   onChange={e => handleSearchChange(e.target.value)}
-                   autoFocus
-                   className="bg-transparent border-none focus:outline-none text-sm w-full placeholder:text-outline"
-                   placeholder="Search queue..."
-                 />
-               </div>
-             </div>
-           </div>
-           <button 
-             className="signature-gradient w-16 h-16 rounded-full flex items-center justify-center text-white shadow-2xl shadow-primary/40 hover:scale-110 transition-transform"
-           >
-             <span className="material-symbols-outlined text-3xl">search</span>
-           </button>
+          <div className="absolute bottom-full right-0 mb-4 scale-0 group-hover:scale-100 transition-all origin-bottom-right">
+            <div className="bg-surface-container-high p-4 rounded-2xl shadow-2xl border border-outline-variant/20 w-80">
+              <div className="flex items-center gap-2 bg-surface-container-low px-4 py-3 rounded-xl">
+                <span className="material-symbols-outlined text-outline text-sm">search</span>
+                <input
+                  value={search}
+                  onChange={(e) => handleSearchChange(e.target.value)}
+                  autoFocus
+                  className="bg-transparent border-none focus:outline-none text-sm w-full placeholder:text-outline"
+                  placeholder="Search queue..."
+                />
+              </div>
+            </div>
+          </div>
+          <button className="signature-gradient w-16 h-16 rounded-full flex items-center justify-center text-white shadow-2xl shadow-primary/40 hover:scale-110 transition-transform">
+            <span className="material-symbols-outlined text-3xl">search</span>
+          </button>
         </div>
       </div>
 
+      {/* ── Modals ── */}
       {isPrescribing && activePatient && (
-        <AddPrescriptionModal 
+        <AddPrescriptionModal
           patientId={activePatient.id}
-          doctorName={user?.username || "Attending Physician"}
+          doctorName={user?.username || 'Attending Physician'}
           onClose={() => setIsPrescribing(false)}
           onAdd={(rx) => addPrescription(activePatient.id, rx)}
         />
@@ -639,7 +760,7 @@ const DoctorDashboard: React.FC = () => {
 
       {isReferring && activePatient && (
         <ReferralModal
-          doctorName={user?.username || "Attending Physician"}
+          doctorName={user?.username || 'Attending Physician'}
           onClose={() => setIsReferring(false)}
           onRefer={(ref) => addReferral(activePatient.id, ref)}
         />

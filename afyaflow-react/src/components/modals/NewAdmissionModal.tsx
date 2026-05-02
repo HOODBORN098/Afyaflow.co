@@ -41,7 +41,7 @@ const NewAdmissionModal: React.FC<Props> = ({ onClose, onSuccess }) => {
         nationalId: '',
         reason: '',
         email: '',
-        department: departments[0]?.name || 'General',
+        department: (departments.find(d => d.name.toLowerCase() === 'general') || departments[0])?.name || 'General',
         priority: 'standard' as Priority,
         assignedDoctor: '',
     });
@@ -222,7 +222,7 @@ const NewAdmissionModal: React.FC<Props> = ({ onClose, onSuccess }) => {
                                 >
                                     <option value="">Auto-assign (Recommended)</option>
                                     {doctors
-                                        .filter(d => !form.department || d.department?.name === form.department || d.specialization === form.department)
+                                        .filter(d => d.department?.name === form.department)
                                         .map(d => <option key={d.id} value={d.name}>{d.name}</option>)
                                     }
                                 </select>

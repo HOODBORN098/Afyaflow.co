@@ -31,6 +31,7 @@ const ReceptionistDashboard: React.FC = () => {
   const [lastToken, setLastToken] = useState<Patient | null>(null);
   const [isPatientListOpen, setIsPatientListOpen] = useState(false);
   const [showAdmissionModal, setShowAdmissionModal] = useState(false);
+  const [showSuccessView, setShowSuccessView] = useState(false);
 
   // Sync local search with global search
   useEffect(() => {
@@ -59,6 +60,8 @@ const ReceptionistDashboard: React.FC = () => {
   const handleAdmissionSuccess = (patient: Patient) => {
     setLastToken(patient);
     setShowAdmissionModal(false);
+    // Persist the token view until explicitly closed
+    setShowSuccessView(true);
   };
 
   /**
@@ -334,12 +337,52 @@ const ReceptionistDashboard: React.FC = () => {
           title="Live Queue (Waiting)"
         />
       )}
-      {/* New Admission Modal */}
       {showAdmissionModal && (
         <NewAdmissionModal
           onClose={() => setShowAdmissionModal(false)}
           onSuccess={handleAdmissionSuccess}
         />
+      )}
+
+      {/* Success Token View */}
+      {showSuccessView && lastToken && (
+        <div className="fixed inset-0 z-[110] flex items-center justify-center p-4 bg-slate-900/80 backdrop-blur-md animate-in fade-in duration-300">
+          <div className="w-full max-w-sm bg-white rounded-[40px] overflow-hidden shadow-2xl animate-in zoom-in-95 duration-300 relative">
+            <div className="absolute top-0 left-0 w-full h-2 signature-gradient" />
+            <div className="p-10 text-center">
+              <div className="w-20 h-20 bg-primary/10 rounded-full flex items-center justify-center mx-auto mb-6">
+                <span className="material-symbols-outlined text-4xl text-primary">check_circle</span>
+              </div>
+              <h2 className="text-2xl font-black text-primary mb-2">Registration Successful</h2>
+              <p className="text-xs text-on-surface-variant font-medium mb-10">The patient has been added to the queue</p>
+              
+              <div className="bg-surface-container-low rounded-3xl p-8 mb-10 border border-outline-variant/10 shadow-inner">
+                <p className="text-[10px] font-black uppercase tracking-[0.2em] text-on-surface-variant mb-4">Patient Token</p>
+                <p className="text-6xl font-black text-primary tracking-tighter">{lastToken.tokenId}</p>
+                <p className="text-[10px] font-bold text-on-surface-variant mt-4 uppercase">{lastToken.department} · {lastToken.priority}</p>
+              </div>
+
+              <div className="flex flex-col gap-3">
+                <button 
+                  onClick={() => {
+                    handlePrint(lastToken.tokenId);
+                    setShowSuccessView(false);
+                  }}
+                  className="w-full py-4 signature-gradient text-white rounded-2xl font-black shadow-xl shadow-primary/20 hover:scale-[1.02] transition-transform flex items-center justify-center gap-2"
+                >
+                  <span className="material-symbols-outlined text-xl">print</span>
+                  Print Token
+                </button>
+                <button 
+                  onClick={() => setShowSuccessView(false)}
+                  className="w-full py-4 text-on-surface-variant font-bold text-sm hover:underline"
+                >
+                  Close & Back to Dashboard
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
       )}
     </div>
   );
