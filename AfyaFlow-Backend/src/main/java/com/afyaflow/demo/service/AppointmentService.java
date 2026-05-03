@@ -263,7 +263,6 @@ public class AppointmentService {
         Optional<Appointment> optAppt = repository.findById(appointmentId);
         if (optAppt.isPresent()) {
             Appointment appt = optAppt.get();
-            if (doctorId == null) return false;
             Doctor doctor = doctorRepository.findById(doctorId)
                     .orElseThrow(() -> new RuntimeException("Doctor not found"));
 
