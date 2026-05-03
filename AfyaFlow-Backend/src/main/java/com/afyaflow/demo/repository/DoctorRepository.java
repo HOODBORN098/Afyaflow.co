@@ -8,7 +8,9 @@ import java.util.List;
 @Repository
 public interface DoctorRepository extends JpaRepository<Doctor, Long> {
 
+    // sql queries
     List<Doctor> findByDepartmentId(Long departmentId);
+
     java.util.Optional<Doctor> findByEmail(String email);
 
 }

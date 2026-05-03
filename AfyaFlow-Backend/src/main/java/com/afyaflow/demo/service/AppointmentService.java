@@ -13,7 +13,6 @@ import org.springframework.stereotype.Service;
 import com.afyaflow.demo.model.Appointment;
 import com.afyaflow.demo.model.Doctor;
 import com.afyaflow.demo.model.Patient;
-import com.afyaflow.demo.model.User;
 import com.afyaflow.demo.repository.AppointmentRepository;
 import com.afyaflow.demo.repository.DoctorRepository;
 import com.afyaflow.demo.repository.PatientRepository;
@@ -29,16 +28,15 @@ public class AppointmentService {
     private final UserRepository userRepository;
 
     private static final List<String> ALL_SLOTS = Arrays.asList(
-        "08:00", "08:30", "09:00", "09:30", "10:00", "10:30",
-        "11:00", "11:30", "12:00", "12:30", "13:00", "13:30",
-        "14:00", "14:30", "15:00", "15:30", "16:00", "16:30"
-    );
+            "08:00", "08:30", "09:00", "09:30", "10:00", "10:30",
+            "11:00", "11:30", "12:00", "12:30", "13:00", "13:30",
+            "14:00", "14:30", "15:00", "15:30", "16:00", "16:30");
 
     public AppointmentService(AppointmentRepository repository,
-                              DoctorRepository doctorRepository,
-                              PatientRepository patientRepository,
-                              NotificationService notificationService,
-                              UserRepository userRepository) {
+            DoctorRepository doctorRepository,
+            PatientRepository patientRepository,
+            NotificationService notificationService,
+            UserRepository userRepository) {
         this.repository = repository;
         this.doctorRepository = doctorRepository;
         this.patientRepository = patientRepository;
@@ -63,26 +61,26 @@ public class AppointmentService {
     public Appointment confirmAppointment(Long id) {
         Appointment appt = repository.findById(id).orElseThrow();
         appt.setStatus("CONFIRMED");
-        
+
         // Ensure patient is in queue
         Patient p = appt.getPatient();
         if (p != null) {
             p.setStatus("queued");
             patientRepository.save(p);
-            
+
             // Create notification for patient
             if (p.getEmail() != null) {
                 userRepository.findByEmail(p.getEmail()).ifPresent(user -> {
                     notificationService.createNotification(
-                        user, 
-                        "Appointment Confirmed", 
-                        "Your appointment for " + appt.getDepartmentName() + " has been confirmed. Your token is " + p.getPatientCode(),
-                        "SUCCESS"
-                    );
+                            user,
+                            "Appointment Confirmed",
+                            "Your appointment for " + appt.getDepartmentName() + " has been confirmed. Your token is "
+                                    + p.getPatientCode(),
+                            "SUCCESS");
                 });
             }
         }
-        
+
         return repository.save(appt);
     }
 
@@ -101,17 +99,17 @@ public class AppointmentService {
     public List<String> getAvailableSlots(Long doctorId, String dateStr) {
         LocalDate date = LocalDate.parse(dateStr);
         List<Appointment> existing = repository.findByDoctorId(doctorId)
-            .stream()
-            .filter(a -> date.equals(a.getAppointmentDate()))
-            .collect(Collectors.toList());
+                .stream()
+                .filter(a -> date.equals(a.getAppointmentDate()))
+                .collect(Collectors.toList());
 
         List<String> bookedSlots = existing.stream()
-            .map(Appointment::getTimeSlot)
-            .collect(Collectors.toList());
+                .map(Appointment::getTimeSlot)
+                .collect(Collectors.toList());
 
         return ALL_SLOTS.stream()
-            .filter(slot -> !bookedSlots.contains(slot))
-            .collect(Collectors.toList());
+                .filter(slot -> !bookedSlots.contains(slot))
+                .collect(Collectors.toList());
     }
 
     /**
@@ -127,24 +125,24 @@ public class AppointmentService {
 
             LocalDate date = LocalDate.parse(dateStr);
             List<Long> doctorIds = doctors.stream()
-                .filter(java.util.Objects::nonNull)
-                .map(Doctor::getId)
-                .collect(Collectors.toList());
+                    .filter(java.util.Objects::nonNull)
+                    .map(Doctor::getId)
+                    .collect(Collectors.toList());
 
             // Better: single query for all appointments
             List<Appointment> allAppointments = repository.findByDoctorIdIn(doctorIds).stream()
-                .filter(a -> a != null && date.equals(a.getAppointmentDate()))
-                .collect(Collectors.toList());
+                    .filter(a -> a != null && date.equals(a.getAppointmentDate()))
+                    .collect(Collectors.toList());
 
             // A slot is available if (count of appointments in slot) < (number of doctors)
             return ALL_SLOTS.stream()
-                .filter(slot -> {
-                    long count = allAppointments.stream()
-                        .filter(a -> slot.equals(a.getTimeSlot()))
-                        .count();
-                    return count < doctors.size();
-                })
-                .collect(Collectors.toList());
+                    .filter(slot -> {
+                        long count = allAppointments.stream()
+                                .filter(a -> slot.equals(a.getTimeSlot()))
+                                .count();
+                        return count < doctors.size();
+                    })
+                    .collect(Collectors.toList());
         } catch (Exception e) {
             e.printStackTrace();
             throw e;
@@ -156,20 +154,22 @@ public class AppointmentService {
      * Creates and persists the appointment as CONFIRMED.
      */
     @SuppressWarnings("null")
-    public Appointment bookAppointment(String patientEmail, Long doctorId, Long departmentId, String dateStr, String time) {
+    public Appointment bookAppointment(String patientEmail, Long doctorId, Long departmentId, String dateStr,
+            String time) {
         Patient patient = patientRepository.findByEmail(patientEmail)
-            .orElseGet(() -> {
-                System.out.println("DEBUG: Patient profile missing for " + patientEmail + ". Creating minimal profile.");
-                Patient p = Patient.builder()
-                    .email(patientEmail)
-                    .name(patientEmail.split("@")[0])
-                    .firstName(patientEmail.split("@")[0])
-                    .lastName("Patient")
-                    .patientCode(generateTokenId())
-                    .status("ACTIVE")
-                    .build();
-                return patientRepository.save(p);
-            });
+                .orElseGet(() -> {
+                    System.out.println(
+                            "DEBUG: Patient profile missing for " + patientEmail + ". Creating minimal profile.");
+                    Patient p = Patient.builder()
+                            .email(patientEmail)
+                            .name(patientEmail.split("@")[0])
+                            .firstName(patientEmail.split("@")[0])
+                            .lastName("Patient")
+                            .patientCode(generateTokenId())
+                            .status("ACTIVE")
+                            .build();
+                    return patientRepository.save(p);
+                });
 
         // CRITICAL: Ensure legacy patients also get the new 10-digit token format
         if (patient.getPatientCode() == null || !patient.getPatientCode().startsWith("AFYA-")) {
@@ -181,22 +181,24 @@ public class AppointmentService {
 
         if (doctorId != null) {
             assignedDoctor = doctorRepository.findById(doctorId)
-                .orElseThrow(() -> new RuntimeException("Doctor not found: " + doctorId));
+                    .orElseThrow(() -> new RuntimeException("Doctor not found: " + doctorId));
         } else if (departmentId != null) {
             // Auto-assign first available doctor in department
             List<Doctor> doctors = doctorRepository.findByDepartmentId(departmentId);
             if (doctors == null || doctors.isEmpty()) {
                 throw new RuntimeException("No doctors found in department: " + departmentId);
             }
-            
+
             LocalDate date = LocalDate.parse(dateStr);
 
             for (Doctor doc : doctors) {
-                if (doc == null) continue;
+                if (doc == null)
+                    continue;
                 List<Appointment> apps = repository.findByDoctorId(doc.getId());
                 boolean isBusy = apps != null && apps.stream()
-                    .anyMatch(a -> a != null && date.equals(a.getAppointmentDate()) && time.equals(a.getTimeSlot()));
-                
+                        .anyMatch(
+                                a -> a != null && date.equals(a.getAppointmentDate()) && time.equals(a.getTimeSlot()));
+
                 if (!isBusy) {
                     assignedDoctor = doc;
                     break;
@@ -210,38 +212,38 @@ public class AppointmentService {
         }
 
         Appointment appt = Appointment.builder()
-            .patient(patient)
-            .doctor(assignedDoctor)
-            .appointmentDate(LocalDate.parse(dateStr))
-            .timeSlot(time)
-            .departmentName(assignedDoctor.getDepartment() != null ? assignedDoctor.getDepartment().getName() : "")
-            .status("CONFIRMED")
-            .type("scheduled")
-            .queueNumber(patient.getPatientCode())
-            .build();
+                .patient(patient)
+                .doctor(assignedDoctor)
+                .appointmentDate(LocalDate.parse(dateStr))
+                .timeSlot(time)
+                .departmentName(assignedDoctor.getDepartment() != null ? assignedDoctor.getDepartment().getName() : "")
+                .status("CONFIRMED")
+                .type("scheduled")
+                .queueNumber(patient.getPatientCode())
+                .build();
 
         try {
             Appointment savedAppt = repository.save(appt);
-            
+
             // If appointment is for today, put patient in queue immediately
             if (savedAppt.getAppointmentDate().equals(LocalDate.now())) {
                 patient.setStatus("queued");
                 patient.setDepartment(savedAppt.getDepartmentName());
                 patientRepository.save(patient);
             }
-            
+
             // Create notification for patient
             if (patient.getEmail() != null) {
                 userRepository.findByEmail(patient.getEmail()).ifPresent(user -> {
                     notificationService.createNotification(
-                        user, 
-                        "New Appointment Booked", 
-                        "You have successfully booked an appointment for " + savedAppt.getDepartmentName() + " on " + savedAppt.getAppointmentDate(),
-                        "INFO"
-                    );
+                            user,
+                            "New Appointment Booked",
+                            "You have successfully booked an appointment for " + savedAppt.getDepartmentName() + " on "
+                                    + savedAppt.getAppointmentDate(),
+                            "INFO");
                 });
             }
-            
+
             return savedAppt;
         } catch (Exception e) {
             System.err.println("CRITICAL ERROR: Failed to save appointment!");
@@ -249,6 +251,7 @@ public class AppointmentService {
             throw e;
         }
     }
+
     /**
      * Confirms an appointment.
      * Marks status as CONFIRMED and assigns the doctor.
@@ -258,18 +261,18 @@ public class AppointmentService {
         if (optAppt.isPresent()) {
             Appointment appt = optAppt.get();
             Doctor doctor = doctorRepository.findById(doctorId)
-                .orElseThrow(() -> new RuntimeException("Doctor not found"));
-            
+                    .orElseThrow(() -> new RuntimeException("Doctor not found"));
+
             appt.setStatus("CONFIRMED");
             appt.setDoctor(doctor);
-            
+
             // Ensure patient is in queue for the doctor to see
             Patient p = appt.getPatient();
             if (p != null) {
                 p.setStatus("queued");
                 patientRepository.save(p);
             }
-            
+
             repository.save(appt);
             return true;
         }
@@ -278,42 +281,43 @@ public class AppointmentService {
 
     /**
      * Calculates queue statistics for a specific appointment.
-     * Position is determined by the number of CONFIRMED appointments 
+     * Position is determined by the number of CONFIRMED appointments
      * scheduled before this one on the same day for the same doctor.
      */
     public QueueStats getQueueStatus(Long appointmentId, Long doctorId) {
         Appointment target = repository.findById(appointmentId)
-            .orElseThrow(() -> new RuntimeException("Appointment not found"));
-        
+                .orElseThrow(() -> new RuntimeException("Appointment not found"));
+
         List<Appointment> dayAppointments = repository.findByDoctorId(doctorId)
-            .stream()
-            .filter(a -> a.getAppointmentDate().equals(target.getAppointmentDate()))
-            .filter(a -> "CONFIRMED".equals(a.getStatus()) || "IN_PROGRESS".equals(a.getStatus()))
-            .sorted((a, b) -> a.getTimeSlot().compareTo(b.getTimeSlot()))
-            .collect(Collectors.toList());
+                .stream()
+                .filter(a -> a.getAppointmentDate().equals(target.getAppointmentDate()))
+                .filter(a -> "CONFIRMED".equals(a.getStatus()) || "IN_PROGRESS".equals(a.getStatus()))
+                .sorted((a, b) -> a.getTimeSlot().compareTo(b.getTimeSlot()))
+                .collect(Collectors.toList());
 
         int position = dayAppointments.indexOf(target) + 1;
         int total = dayAppointments.size();
-        
+
         return QueueStats.builder()
-            .userPosition(position)
-            .totalInQueue(total)
-            .patientsAhead(Math.max(0, position - 1))
-            .estimatedWaitTime(Math.max(0, position - 1) * 15) // 15 mins per patient
-            .doctorStatus("Available")
-            .build();
+                .userPosition(position)
+                .totalInQueue(total)
+                .patientsAhead(Math.max(0, position - 1))
+                .estimatedWaitTime(Math.max(0, position - 1) * 15) // 15 mins per patient
+                .doctorStatus("Available")
+                .build();
     }
 
     private String generateTokenId() {
         // Use a 10-digit random number as requested: AFYA-1407832147
-        long randomNum = (long)(Math.random() * 9_000_000_000L) + 1_000_000_000L;
+        long randomNum = (long) (Math.random() * 9_000_000_000L) + 1_000_000_000L;
         return "AFYA-" + randomNum;
     }
+
     public void cancelAppointment(Long id) {
         repository.findById(id).ifPresent(appt -> {
             appt.setStatus("cancelled");
             repository.save(appt);
-            
+
             // If patient exists, update their status too if they were queued
             Patient p = appt.getPatient();
             if (p != null && "queued".equals(p.getStatus())) {
@@ -325,11 +329,10 @@ public class AppointmentService {
             if (p != null && p.getEmail() != null) {
                 userRepository.findByEmail(p.getEmail()).ifPresent(user -> {
                     notificationService.createNotification(
-                        user,
-                        "Appointment Cancelled",
-                        "Your appointment for " + appt.getDepartmentName() + " has been successfully cancelled.",
-                        "ALERT"
-                    );
+                            user,
+                            "Appointment Cancelled",
+                            "Your appointment for " + appt.getDepartmentName() + " has been successfully cancelled.",
+                            "ALERT");
                 });
             }
         });

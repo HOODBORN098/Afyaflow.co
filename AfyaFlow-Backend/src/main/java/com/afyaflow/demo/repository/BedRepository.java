@@ -8,6 +8,8 @@ import java.util.List;
 
 @Repository
 public interface BedRepository extends JpaRepository<Bed, Long> {
+    // sql queries
     List<Bed> findByWardId(Long wardId);
+
     List<Bed> findByStatus(String status);
 }

@@ -165,8 +165,8 @@ export function missedQueueApi(queueId: number) {
   return apiRequest<QueueApiResponse>(`/queue/${queueId}/missed`, { method: 'PATCH' });
 }
 
-export type Department = { id: number; name: string };
-export type Doctor = { id: number; name: string; department?: Department };
+export type Department = { id: number; name: string; description: string };
+export type Doctor = { id: number; name: string; department?: Department; specialization: string };
 export type Receptionist = { id: number; name: string };
 export type AdminAnalytics = {
   totalUsers: number;
@@ -255,7 +255,7 @@ export function getAvailableSlotsApi(date: string, options: { doctorId?: number;
   let query = `date=${date}`;
   if (options.doctorId) query += `&doctorId=${options.doctorId}`;
   if (options.departmentId) query += `&departmentId=${options.departmentId}`;
-  
+
   return apiRequest<string[]>(`/appointments/available-slots?${query}`, { method: 'GET' });
 }
 
