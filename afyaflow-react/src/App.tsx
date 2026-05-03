@@ -20,6 +20,7 @@ import PatientProfilePage from './pages/PatientProfilePage';
 import AuditPage from './pages/AuditPage';
 import SettingsPage from './pages/SettingsPage';
 import ReportsPage from './pages/ReportsPage';
+import DepartmentsPage from './pages/DepartmentsPage';
 import { useAuth } from './context/AuthContext';
 import { Toaster } from 'sonner';
 
@@ -77,6 +78,7 @@ function App() {
                     <Route path="/emr" element={<ProtectedRoute allowedRoles={['Admin', 'Doctor']}><PatientProfilePage /></ProtectedRoute>} />
                     <Route path="/audit" element={<ProtectedRoute allowedRoles="Admin"><AuditPage /></ProtectedRoute>} />
                     <Route path="/reports" element={<ProtectedRoute allowedRoles="Admin"><ReportsPage /></ProtectedRoute>} />
+                    <Route path="/departments" element={<ProtectedRoute allowedRoles="Admin"><DepartmentsPage /></ProtectedRoute>} />
                     <Route path="/settings" element={<ProtectedRoute allowedRoles={['Admin', 'Doctor', 'Receptionist']}><SettingsPage /></ProtectedRoute>} />
                   </Route>
 

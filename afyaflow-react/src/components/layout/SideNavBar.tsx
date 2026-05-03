@@ -18,6 +18,7 @@ const allNavItems = [
 
   // Administration
   { icon: 'analytics',          label: 'Reports',      path: '/reports',    roles: ['Admin'] },
+  { icon: 'clinical_notes',     label: 'Departments',  path: '/departments',roles: ['Admin'] },
   { icon: 'receipt_long',       label: 'Audit Logs',   path: '/audit',      roles: ['Admin'] },
 
   // Universal
