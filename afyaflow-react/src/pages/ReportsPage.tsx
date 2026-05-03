@@ -46,6 +46,11 @@ const REPORT_TYPES: { key: ReportType; label: string; icon: string; desc: string
   { key: 'morbidity',       label: 'Morbidity Report',  icon: 'local_hospital',   desc: 'Disease burden and top diagnostic categories' },
 ];
 
+/**
+ * REPORTS PAGE
+ * Aggregates clinical and operational data into actionable insights.
+ * Supports exporting reports in PDF and CSV formats for institutional records.
+ */
 const ReportsPage: React.FC = () => {
   const { patients, departments } = useData();
   const { searchQuery, setSearchQuery } = useSearch();

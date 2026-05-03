@@ -23,6 +23,11 @@ const BED_STATUS: Record<string, string> = {
 
 
 
+/**
+ * WARDS PAGE
+ * Manages hospital bed occupancy, ward admissions, and clinical space allocation.
+ * Features a real-time bed map and ward-specific analytics.
+ */
 const WardsPage: React.FC = () => {
   const { wards, fetchWards, departments } = useData();
   const { searchQuery, setSearchQuery } = useSearch();

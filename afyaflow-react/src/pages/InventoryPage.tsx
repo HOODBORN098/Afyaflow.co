@@ -4,6 +4,11 @@ import { useData, getInventoryStatus } from '../context/DataContext';
 import DashboardCard from '../components/ui/DashboardCard';
 import StatusChip from '../components/ui/StatusChip';
 
+/**
+ * INVENTORY PAGE
+ * Tracks hospital medical supplies, equipment, and pharmaceutical stock levels.
+ * Provides automated alerts for low-stock items and expiration tracking.
+ */
 const InventoryPage: React.FC = () => {
     const { inventory } = useData();
     const { searchQuery, setSearchQuery } = useSearch();

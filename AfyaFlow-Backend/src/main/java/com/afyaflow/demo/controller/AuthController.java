@@ -22,6 +22,11 @@ import org.springframework.web.bind.annotation.RestController;
 import java.util.HashMap;
 import java.util.Map;
 
+/**
+ * AUTH CONTROLLER: Central hub for identity management.
+ * Handles JWT login, role-based registration, password updates, 
+ * and persistent profile synchronization for all staff roles.
+ */
 @RestController
 @RequestMapping("/api/auth")
 public class AuthController {
@@ -209,5 +214,75 @@ public class AuthController {
         }
 
         return ResponseEntity.ok(Map.of("message", "Password set successfully"));
+    }
+    /**
+     * UPDATE PROFILE: Allows staff to update their display name, email, and department.
+     * Updates are persisted to the database and a new JWT is returned.
+     */
+    @org.springframework.web.bind.annotation.PutMapping("/profile")
+    @org.springframework.security.access.prepost.PreAuthorize("isAuthenticated()")
+    public ResponseEntity<?> updateProfile(
+            @RequestBody Map<String, String> body,
+            java.security.Principal principal) {
+        User user = userRepository.findByEmail(principal.getName())
+                .orElseThrow(() -> new RuntimeException("User not found"));
+
+        String newUsername = body.get("username");
+        String newEmail    = body.get("email");
+        String newDept     = body.get("department");
+
+        if (newEmail != null && !newEmail.isBlank() && !newEmail.equals(user.getEmail())) {
+            if (userRepository.findByEmail(newEmail).isPresent()) {
+                return ResponseEntity.badRequest().body(Map.of("message", "Email already in use"));
+            }
+            user.setEmail(newEmail);
+            user.setUsername(newEmail);
+        }
+        if (newUsername != null && !newUsername.isBlank()) user.setUsername(newUsername);
+        if (newDept     != null) user.setDepartment(newDept);
+
+        if (user != null) {
+            userRepository.save(user);
+        }
+        
+        auditService.log("PROFILE_UPDATED", "User", user.getId().toString(),
+                "Profile updated for: " + user.getEmail());
+
+        String newToken = jwtService.generateToken(user);
+        return ResponseEntity.ok(Map.of(
+                "message", "Profile updated successfully",
+                "token",   newToken,
+                "username", user.getUsername(),
+                "email",    user.getEmail(),
+                "department", user.getDepartment() != null ? user.getDepartment() : ""
+        ));
+    }
+
+    /**
+     * CHANGE PASSWORD: Securely updates user credentials with current password verification.
+     */
+    @org.springframework.web.bind.annotation.PutMapping("/change-password")
+    @org.springframework.security.access.prepost.PreAuthorize("isAuthenticated()")
+    public ResponseEntity<?> changePassword(
+            @RequestBody Map<String, String> body,
+            java.security.Principal principal) {
+        
+        User user = userRepository.findByEmail(principal.getName())
+                .orElseThrow(() -> new RuntimeException("User not found"));
+
+        String currentPassword = body.get("currentPassword");
+        String newPassword = body.get("newPassword");
+
+        if (!passwordEncoder.matches(currentPassword, user.getPassword())) {
+            return ResponseEntity.badRequest().body(Map.of("message", "Current password incorrect"));
+        }
+
+        user.setPassword(passwordEncoder.encode(newPassword));
+        userRepository.save(user);
+        
+        auditService.log("PASSWORD_CHANGED", "User", user.getId().toString(),
+                "Password changed for: " + user.getEmail());
+
+        return ResponseEntity.ok(Map.of("message", "Password updated successfully"));
     }
 }

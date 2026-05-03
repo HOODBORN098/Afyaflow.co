@@ -3,6 +3,7 @@ import { useAuth } from '../context/AuthContext';
 import DashboardCard from '../components/ui/DashboardCard';
 import SignatureButton from '../components/ui/SignatureButton';
 import { useNotification } from '../context/NotificationContext';
+import api from '../services/api';
 
 type SettingsTab = 'profile' | 'security' | 'notifications' | 'roster';
 
@@ -30,7 +31,7 @@ const SHIFT_COLORS: Record<string, string> = {
 };
 
 const SettingsPage: React.FC = () => {
-  const { user } = useAuth();
+  const { user, setSessionToken } = useAuth();
   const { notify } = useNotification();
   const [activeTab, setActiveTab] = useState<SettingsTab>('profile');
   const [roster, setRoster] = useState<RosterEntry[]>(INITIAL_ROSTER);
@@ -39,58 +40,61 @@ const SettingsPage: React.FC = () => {
 
   // Profile form state
   const [profileForm, setProfileForm] = useState({
-    displayName: user?.username || '',
+    username: user?.username || '',
     email: user?.email || '',
     department: user?.department || '',
-    phone: '',
-    bio: '',
   });
+  const [isUpdating, setIsUpdating] = useState(false);
 
   // Security form state
   const [securityForm, setSecurityForm] = useState({ currentPassword: '', newPassword: '', confirmPassword: '' });
   const [securityError, setSecurityError] = useState<string | null>(null);
+  const [showCurrentPassword, setShowCurrentPassword] = useState(false);
+  const [showNewPassword, setShowNewPassword] = useState(false);
 
-  // Notifications state
-  const [notifSettings, setNotifSettings] = useState({
-    newPatient: true,
-    statusChange: true,
-    referral: true,
-    systemAlerts: true,
-    emailDigest: false,
-  });
-
-  // Add shift form
-  const [shiftForm, setShiftForm] = useState({ staff: '', role: 'Doctor', department: '', date: today, shiftType: 'Morning', start: '08:00', end: '16:00' });
-
-  const handleProfilePhotoChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (file) {
-      if (file.size > 5 * 1024 * 1024) {
-        notify('File size must be less than 5MB', 'error', 'File Too Large');
-        return;
+  const handleProfileSave = async () => {
+    setIsUpdating(true);
+    try {
+      /**
+       * SYNC PROFILE: Updates user details in the DB and gets a fresh JWT.
+       */
+      const response = await api.put('/api/auth/profile', {
+        username: profileForm.username,
+        email: profileForm.email,
+        department: profileForm.department
+      });
+      
+      if (response.data.token) {
+        setSessionToken(response.data.token);
       }
       
-      const reader = new FileReader();
-      reader.onloadend = () => {
-        setProfilePhoto(reader.result as string);
-        notify('Photo uploaded successfully', 'success', 'Profile Photo Updated');
-      };
-      reader.readAsDataURL(file);
+      notify('Profile updated successfully and synced across sessions.', 'success', 'Settings Saved');
+    } catch (error: any) {
+      notify(error.response?.data?.message || 'Failed to update profile.', 'error', 'Server Error');
+    } finally {
+      setIsUpdating(false);
     }
   };
 
-  const handleProfileSave = () => {
-    // TODO: Send profileForm and profilePhoto to backend API
-    notify('Profile updated successfully.', 'success', 'Settings Saved');
-  };
-
-  const handlePasswordChange = () => {
+  const handlePasswordChange = async () => {
     setSecurityError(null);
     if (!securityForm.currentPassword) { setSecurityError('Current password is required.'); return; }
     if (securityForm.newPassword.length < 8) { setSecurityError('New password must be at least 8 characters.'); return; }
     if (securityForm.newPassword !== securityForm.confirmPassword) { setSecurityError('Passwords do not match.'); return; }
-    notify('Password changed successfully.', 'success', 'Security Updated');
-    setSecurityForm({ currentPassword: '', newPassword: '', confirmPassword: '' });
+    
+    try {
+      /**
+       * UPDATE SECURITY: Verifies current password before applying new credentials.
+       */
+      await api.put('/api/auth/change-password', {
+        currentPassword: securityForm.currentPassword,
+        newPassword: securityForm.newPassword
+      });
+      notify('Password changed successfully.', 'success', 'Security Updated');
+      setSecurityForm({ currentPassword: '', newPassword: '', confirmPassword: '' });
+    } catch (error: any) {
+      setSecurityError(error.response?.data?.message || 'Failed to update password.');
+    }
   };
 
   const handleAddShift = () => {
@@ -173,10 +177,9 @@ const SettingsPage: React.FC = () => {
 
               <div className="grid grid-cols-2 gap-5">
                 {[
-                  { label: 'Display Name',  field: 'displayName',  placeholder: 'Your full name' },
-                  { label: 'Email Address', field: 'email',         placeholder: 'name@hospital.org' },
+                  { label: 'Username / Email',  field: 'username',  placeholder: 'Your username' },
+                  { label: 'Email Address',     field: 'email',     placeholder: 'name@hospital.org' },
                   ...(user?.role !== 'Doctor' ? [{ label: 'Department',    field: 'department',    placeholder: 'Your clinical area' }] : []),
-                  { label: 'Phone Number',  field: 'phone',         placeholder: '+254 7XX XXX XXX' },
                 ].map(f => (
                   <div key={f.field}>
                     <label className="block text-xs font-bold uppercase tracking-widest text-on-surface-variant mb-1.5 ml-1">{f.label}</label>
@@ -208,19 +211,60 @@ const SettingsPage: React.FC = () => {
                 <p className="text-sm text-on-surface-variant">Use a strong, unique password. Updates take effect immediately.</p>
               </div>
               <div className="space-y-4">
-                {[
-                  { label: 'Current Password',     field: 'currentPassword' },
-                  { label: 'New Password',          field: 'newPassword' },
-                  { label: 'Confirm New Password',  field: 'confirmPassword' },
-                ].map(f => (
-                  <div key={f.field}>
-                    <label className="block text-xs font-bold uppercase tracking-widest text-on-surface-variant mb-1.5 ml-1">{f.label}</label>
-                    <input type="password" placeholder="••••••••"
-                      value={(securityForm as any)[f.field]}
-                      onChange={e => setSecurityForm(p => ({ ...p, [f.field]: e.target.value }))}
-                      className="w-full px-4 py-3 bg-surface-container-low border border-outline-variant/40 rounded-xl text-sm focus:ring-2 focus:ring-primary/20 focus:border-primary transition-all" />
+                <div className="space-y-2">
+                  <label className="block text-xs font-bold uppercase tracking-widest text-on-surface-variant mb-1.5 ml-1">Current Password</label>
+                  <div className="relative">
+                    <input 
+                      type={showCurrentPassword ? 'text' : 'password'} 
+                      placeholder="••••••••"
+                      value={securityForm.currentPassword}
+                      onChange={e => setSecurityForm({ ...securityForm, currentPassword: e.target.value })}
+                      className="w-full px-4 pr-12 py-3 bg-surface-container-low border border-outline-variant/40 rounded-xl text-sm focus:ring-2 focus:ring-primary/20 focus:border-primary transition-all" 
+                    />
+                    <button
+                      type="button"
+                      onClick={() => setShowCurrentPassword(!showCurrentPassword)}
+                      className="absolute inset-y-0 right-0 pr-3.5 flex items-center text-on-surface-variant hover:text-primary transition-colors"
+                    >
+                      <span className="material-symbols-outlined text-[20px]">
+                        {showCurrentPassword ? 'visibility_off' : 'visibility'}
+                      </span>
+                    </button>
                   </div>
-                ))}
+                </div>
+
+                <div className="space-y-2">
+                  <label className="block text-xs font-bold uppercase tracking-widest text-on-surface-variant mb-1.5 ml-1">New Password</label>
+                  <div className="relative">
+                    <input 
+                      type={showNewPassword ? 'text' : 'password'} 
+                      placeholder="••••••••"
+                      value={securityForm.newPassword}
+                      onChange={e => setSecurityForm({ ...securityForm, newPassword: e.target.value })}
+                      className="w-full px-4 pr-12 py-3 bg-surface-container-low border border-outline-variant/40 rounded-xl text-sm focus:ring-2 focus:ring-primary/20 focus:border-primary transition-all" 
+                    />
+                    <button
+                      type="button"
+                      onClick={() => setShowNewPassword(!showNewPassword)}
+                      className="absolute inset-y-0 right-0 pr-3.5 flex items-center text-on-surface-variant hover:text-primary transition-colors"
+                    >
+                      <span className="material-symbols-outlined text-[20px]">
+                        {showNewPassword ? 'visibility_off' : 'visibility'}
+                      </span>
+                    </button>
+                  </div>
+                </div>
+
+                <div className="space-y-2">
+                  <label className="block text-xs font-bold uppercase tracking-widest text-on-surface-variant mb-1.5 ml-1">Confirm New Password</label>
+                  <input 
+                    type="password" 
+                    placeholder="••••••••"
+                    value={securityForm.confirmPassword}
+                    onChange={e => setSecurityForm({ ...securityForm, confirmPassword: e.target.value })}
+                    className="w-full px-4 py-3 bg-surface-container-low border border-outline-variant/40 rounded-xl text-sm focus:ring-2 focus:ring-primary/20 focus:border-primary transition-all" 
+                  />
+                </div>
               </div>
               {securityError && (
                 <div className="bg-error-container/40 text-on-error-container text-sm p-3 rounded-xl border border-error/10">{securityError}</div>
