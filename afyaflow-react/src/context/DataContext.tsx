@@ -183,6 +183,7 @@ interface DataContextType {
     addDepartment: (name: string) => Promise<void>;
     deleteDepartment: (id: number) => Promise<void>;
     fetchWards: () => Promise<void>;
+    fetchDepartments: () => Promise<void>;
     fetchAuditLogs: () => Promise<void>;
     isAssignedToBed: (patientId: string) => boolean;
     updateDoctor: (id: string, data: any) => Promise<void>;
@@ -547,6 +548,7 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
                 addDepartment,
                 deleteDepartment,
                 fetchWards,
+                fetchDepartments,
                 fetchAuditLogs,
                 isAssignedToBed,
                 updateDoctor,

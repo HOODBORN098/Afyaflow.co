@@ -55,10 +55,12 @@ public class AppointmentService {
     }
 
     public Appointment getAppointment(Long id) {
+        if (id == null) return null;
         return repository.findById(id).orElse(null);
     }
 
     public Appointment confirmAppointment(Long id) {
+        if (id == null) throw new IllegalArgumentException("Appointment ID cannot be null");
         Appointment appt = repository.findById(id).orElseThrow();
         appt.setStatus("CONFIRMED");
 
@@ -257,9 +259,11 @@ public class AppointmentService {
      * Marks status as CONFIRMED and assigns the doctor.
      */
     public boolean confirmAppointment(Long appointmentId, Long doctorId) {
+        if (appointmentId == null || doctorId == null) return false;
         Optional<Appointment> optAppt = repository.findById(appointmentId);
         if (optAppt.isPresent()) {
             Appointment appt = optAppt.get();
+            if (doctorId == null) return false;
             Doctor doctor = doctorRepository.findById(doctorId)
                     .orElseThrow(() -> new RuntimeException("Doctor not found"));
 
@@ -285,6 +289,7 @@ public class AppointmentService {
      * scheduled before this one on the same day for the same doctor.
      */
     public QueueStats getQueueStatus(Long appointmentId, Long doctorId) {
+        if (appointmentId == null || doctorId == null) throw new IllegalArgumentException("IDs cannot be null");
         Appointment target = repository.findById(appointmentId)
                 .orElseThrow(() -> new RuntimeException("Appointment not found"));
 
@@ -314,6 +319,7 @@ public class AppointmentService {
     }
 
     public void cancelAppointment(Long id) {
+        if (id == null) return;
         repository.findById(id).ifPresent(appt -> {
             appt.setStatus("cancelled");
             repository.save(appt);

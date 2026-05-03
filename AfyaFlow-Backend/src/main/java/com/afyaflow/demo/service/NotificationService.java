@@ -15,10 +15,12 @@ public class NotificationService {
     }
 
     public List<Notification> getNotificationsForUser(Long userId) {
+        if (userId == null) return List.of();
         return repository.findByUserIdOrderByCreatedAtDesc(userId);
     }
 
     public long countUnread(Long userId) {
+        if (userId == null) return 0;
         return repository.countByUserIdAndIsReadFalse(userId);
     }
 
@@ -29,10 +31,13 @@ public class NotificationService {
                 .message(message)
                 .type(type)
                 .build();
-        repository.save(notification);
+        if (notification != null) {
+            repository.save(notification);
+        }
     }
 
     public void markAsRead(Long notificationId) {
+        if (notificationId == null) return;
         repository.findById(notificationId).ifPresent(n -> {
             n.setRead(true);
             repository.save(n);
@@ -40,6 +45,7 @@ public class NotificationService {
     }
 
     public void markAllAsRead(Long userId) {
+        if (userId == null) return;
         List<Notification> unread = repository.findByUserIdOrderByCreatedAtDesc(userId)
                 .stream().filter(n -> !n.isRead()).toList();
         unread.forEach(n -> n.setRead(true));

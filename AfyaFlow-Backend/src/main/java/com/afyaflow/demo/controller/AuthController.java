@@ -241,9 +241,7 @@ public class AuthController {
         if (newUsername != null && !newUsername.isBlank()) user.setUsername(newUsername);
         if (newDept     != null) user.setDepartment(newDept);
 
-        if (user != null) {
-            userRepository.save(user);
-        }
+        userRepository.save(user);
         
         auditService.log("PROFILE_UPDATED", "User", user.getId().toString(),
                 "Profile updated for: " + user.getEmail());
